@@ -1,0 +1,1 @@
+Các ảnh này là mockup định hướng UI/UX đã chốt trong quá trình thiết kế. Source code V1 ưu tiên dữ liệu đúng từ 2 PDF; một số số minh họa trong mockup không phải dữ liệu chính thức và không được dùng làm seed database.

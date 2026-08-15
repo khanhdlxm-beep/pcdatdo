@@ -1,0 +1,37 @@
+export type Tone = 'good' | 'warn' | 'bad' | 'info' | 'neutral';
+export type StatusSummary = { total:number; pass:number; partial:number; fail:number };
+export type KpiCard = { id:string; label:string; value:string; detail?:string; plan?:string; tone:Tone; status?:string; sourcePage?:number };
+export type FieldGroup = { id:string; title:string; items:KpiCard[] };
+export type AlertItem = { id:string; title:string; current:string; target?:string; note:string; domain:string; severity:'red'|'yellow'|'data'; sourcePage?:number; domainId?:string; kpiId?:string };
+export type ConflictItem = { id:string; label:string; sourceA:string; valueA:string; sourceB:string; valueB:string; recommendation:string };
+export type IncidentCause = { label:string; monthValue:number; monthShare:number; ytdValue:number; ytdShare:number };
+export type Reliability = { id:'SAIFI'|'SAIDI'|'MAIFI'; unit:string; targetYear:number; targetPeriod:number; month:number; ytd:number; status:string };
+export type PlanItem = { id:string; owner:string; title:string; status:string; note?:string };
+export type MetricHistoryPoint = { period:string; actual:number; planMonth:number; ytd:number; planYtd:number };
+export type MetricHistory = {
+  id:string;
+  unit:string;
+  direction:'higher'|'lower'|'info';
+  aggregate:'sum'|'avg'|'snapshot';
+  decimals:number;
+  annualPlans:Record<string,number>;
+  points:MetricHistoryPoint[];
+};
+export type DashboardBootstrap = {
+  ok:boolean;
+  period:string;
+  reportingDate:string;
+  dataMode:'pdf-seed'|'apps-script'|'demo';
+  sourceLabel:string;
+  availablePeriods?:string[];
+  history?:Record<string,MetricHistory>;
+  summary:StatusSummary;
+  headline:KpiCard[];
+  fields:FieldGroup[];
+  reliability:Reliability[];
+  incidentCauses:IncidentCause[];
+  alerts:AlertItem[];
+  conflicts:ConflictItem[];
+  plans:PlanItem[];
+  notes:string[];
+};
