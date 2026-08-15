@@ -624,6 +624,7 @@ function CompactHeader({ data, openSource, openWeather, exportData, onPeriodChan
             {months.map((month)=><option key={month} value={month}>T{month}</option>)}
           </select>
         </div>
+        <a className="iconBtn importBtn" href="/pdf-import" aria-label="Nhập báo cáo PDF" title="Nhập báo cáo PDF">⇧</a>
         <button className={`iconBtn weatherBtn ${weatherClass}`} onClick={openWeather} aria-label="Thời tiết và gợi ý điều hành" title="Thời tiết & gợi ý">☁</button>
         <button className="iconBtn" onClick={openSource} aria-label="Nguồn dữ liệu" title="Nguồn dữ liệu">ⓘ</button>
         <button className="iconBtn exportBtn" onClick={exportData} aria-label="Xuất dữ liệu" title="Xuất dữ liệu">⇩</button>

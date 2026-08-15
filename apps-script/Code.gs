@@ -30,7 +30,11 @@ function doGet(e) {
     if (!isAuthorized_(e)) return json_({ ok: false, error: 'Unauthorized' });
     const action = String((e && e.parameter && e.parameter.action) || 'bootstrap');
     if (action === 'health') return json_({ ok: true, app: 'dieu-hanh-sxkd', now: new Date().toISOString() });
-    if (action === 'bootstrap') return json_(getBootstrap_());
+    if (action === 'bootstrap') return json_(getBootstrap_((e && e.parameter && e.parameter.period) || APP.PERIOD));
+    if (action === 'pdfRules') return json_({ ok:true, rules:getPdfRules_() });
+    if (action === 'pdfImports') return json_({ ok:true, imports:listPdfImports_((e && e.parameter && e.parameter.limit) || 10) });
+    if (action === 'pdfPeriodData') return json_({ ok:true, records:getPdfPeriodData_((e && e.parameter && e.parameter.period) || '') });
+    if (action === 'pdfStaging') return json_(getPdfStaging_((e && e.parameter && e.parameter.importId) || ''));
     return json_({ ok: false, error: 'Unknown action' });
   } catch (err) {
     return json_({ ok: false, error: String(err && err.message ? err.message : err) });
@@ -42,6 +46,10 @@ function doPost(e) {
     const payload = JSON.parse((e && e.postData && e.postData.contents) || '{}');
     if (!isAuthorizedPayload_(payload)) return json_({ ok: false, error: 'Unauthorized' });
     if (payload.action === 'correctKpi') return json_(correctKpi_(payload));
+    if (payload.action === 'stagePdfImport') return json_(stagePdfImport_(payload));
+    if (payload.action === 'approvePdfImport') return json_(approvePdfImport_(payload));
+    if (payload.action === 'correctImportedKpi') return json_(correctImportedKpi_(payload));
+    if (payload.action === 'savePdfStaging') return json_(savePdfStaging_(payload));
     return json_({ ok: false, error: 'Unknown action' });
   } catch (err) {
     return json_({ ok: false, error: String(err && err.message ? err.message : err) });
@@ -154,7 +162,17 @@ function seedJuly2026FromTwoPdfs() {
   ]);
 }
 
-function getBootstrap_() {
+function getBootstrap_(period) {
+  try {
+    if (typeof getImportedBootstrap_ === 'function') {
+      const imported = getImportedBootstrap_(period);
+      if (imported) return imported;
+    }
+  } catch (err) { console.warn('Imported bootstrap fallback', err); }
+  return getLegacyBootstrap_();
+}
+
+function getLegacyBootstrap_() {
   const cfg = readConfig_();
   const allKpis = readObjects_(APP.SHEETS.KPI).filter(r => String(r.PERIOD) === APP.PERIOD);
   const groups = {};
@@ -257,12 +275,12 @@ function readConfig_() {
 function truthy_(v) { return v === true || String(v).toUpperCase() === 'TRUE' || String(v) === '1'; }
 function isAuthorized_(e) {
   const expected = PropertiesService.getScriptProperties().getProperty('API_KEY');
-  if (!expected) return true;
+  if (!expected) return false;
   return String((e && e.parameter && e.parameter.apiKey) || '') === expected;
 }
 function isAuthorizedPayload_(payload) {
   const expected = PropertiesService.getScriptProperties().getProperty('API_KEY');
-  if (!expected) return true;
+  if (!expected) return false;
   return String(payload.apiKey || '') === expected;
 }
 function json_(obj) { return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON); }
