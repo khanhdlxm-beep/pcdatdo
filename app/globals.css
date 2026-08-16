@@ -422,3 +422,44 @@ button,input,select,textarea{font-family:inherit;font-variant-numeric:tabular-nu
   .domainTile{border-top-width:3px!important}.domainTileArt{opacity:.10!important}.domainTileIcon{box-shadow:0 3px 10px color-mix(in srgb,var(--domain-accent) 14%,transparent)!important}
   .planMetricGrid,.planMetaGrid{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
+
+
+/* =========================================================
+   V1.7.2.1 — MOBILE CHART INTERACTION
+   Mobile: tap month -> inline mini sheet below chart (no overlay)
+   Desktop: hover/click -> compact floating tooltip
+   ========================================================= */
+.chartPlotDismiss{fill:transparent;pointer-events:all;cursor:default}
+.chartCurrentAnchor .currentMonthAnchor{fill:#059669;stroke:#fff;stroke-width:2;opacity:.72;filter:drop-shadow(0 2px 4px rgba(5,150,105,.18))}
+.chartSelectedAnchor .planOnlyAnchor{fill:#94A3B8}
+.chartLabel.currentPeriod{fill:#0F172A;font-weight:800}
+.chartMobileDetail{display:none}
+
+@media(min-width:521px){
+  .chartFloatingPopup{max-width:210px}
+  .chartTouchPoint:hover{fill:rgba(5,150,105,.08)}
+  .chartLabel[role="button"]{cursor:pointer}
+}
+
+@media(max-width:520px){
+  /* Không dùng popup nổi trên mobile vì che dữ liệu biểu đồ. */
+  .chartFloatingPopup{display:none!important}
+  .interactiveChartWrap{min-height:0;padding-top:26px}
+  .chartTouchPoint{r:14px}
+  .chartMobileDetail{display:grid;gap:9px;margin:8px 2px 2px;padding:10px 11px;border:1px solid #DDE7E2;border-radius:14px;background:#FFFFFF;box-shadow:0 8px 20px rgba(15,23,42,.07);animation:mobileChartDetailIn .18s ease-out}
+  .chartMobileDetailHead{display:flex;align-items:center;justify-content:space-between;gap:10px;padding-bottom:7px;border-bottom:1px solid #F1F5F9}
+  .chartMobileDetailHead>div{display:grid;gap:1px}.chartMobileDetailHead b{font-size:13px;color:#0F172A}.chartMobileDetailHead span{font-size:10px;color:#64748B}
+  .chartMobileDetailHead button{width:30px;height:30px;border:0;border-radius:9px;background:#F1F5F9;color:#475569;font-size:19px;line-height:1;display:grid;place-items:center;padding:0}
+  .chartMobileDetailGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+  .chartMobileDetailGrid>div{display:grid;gap:2px;padding:8px 9px;border-radius:10px;background:#F8FAFC;min-width:0}
+  .chartMobileDetailGrid small{font-size:9px;color:#64748B;font-weight:500}
+  .chartMobileDetailGrid b{font-size:12px;color:#0F172A;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
+  .chartLegend{align-items:center}.chartLegend small{flex-basis:auto;margin-left:auto;font-size:9px;white-space:nowrap}
+  @keyframes mobileChartDetailIn{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+}
+
+@media(max-width:390px){
+  .chartLegend small{flex-basis:100%;margin-left:0;white-space:normal}
+  .chartMobileDetailGrid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+.chartPlan,.chartActual,.chartSame,.chartForecast,.chartGrid,.chartAxisLabel,.chartSelectedAnchor,.chartCurrentAnchor{pointer-events:none}
