@@ -71,12 +71,12 @@ body{overflow-x:hidden}
 .domainTileText h2{font-size:15px;line-height:1.18;margin:0;color:#0F172A;letter-spacing:-.15px}
 .domainTileText p{font-size:9px;line-height:1.35;color:#64748B;margin:0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .domainArrow{position:absolute;z-index:2;right:11px;bottom:10px;color:var(--domain-accent);font-size:20px;font-weight:800}
-.domain-kinh-doanh{--domain-accent:#0F766E;--domain-soft:#CCFBF1}
-.domain-dvkh{--domain-accent:#2563EB;--domain-soft:#DBEAFE}
-.domain-do-xa{--domain-accent:#7C3AED;--domain-soft:#EDE9FE}
-.domain-ky-thuat{--domain-accent:#EA580C;--domain-soft:#FFEDD5}
-.domain-dau-tu-tai-chinh{--domain-accent:#0891B2;--domain-soft:#CFFAFE}
-.domain-nhan-su{--domain-accent:#C026D3;--domain-soft:#FAE8FF}
+.domain-kinh-doanh{--domain-accent:#0F766E;--domain-soft:#CCFBF1;--domain-card:#F0FDFA}
+.domain-dvkh{--domain-accent:#2563EB;--domain-soft:#DBEAFE;--domain-card:#EFF6FF}
+.domain-do-xa{--domain-accent:#7C3AED;--domain-soft:#EDE9FE;--domain-card:#F5F3FF}
+.domain-ky-thuat{--domain-accent:#EA580C;--domain-soft:#FFEDD5;--domain-card:#FFF7ED}
+.domain-dau-tu-tai-chinh{--domain-accent:#0891B2;--domain-soft:#CFFAFE;--domain-card:#ECFEFF}
+.domain-nhan-su{--domain-accent:#C026D3;--domain-soft:#FAE8FF;--domain-card:#FDF4FF}
 .compactAlertShortcut{width:100%;border:1px solid #FECACA;border-left:4px solid var(--danger);background:#fff;border-radius:14px;padding:10px 11px;display:grid;grid-template-columns:28px 1fr auto;align-items:center;gap:8px;text-align:left;color:var(--ink)}
 .compactAlertShortcut>span{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:var(--danger-bg);color:var(--danger)}
 .compactAlertShortcut>div{display:grid;gap:1px}.compactAlertShortcut b{font-size:11px}.compactAlertShortcut small{font-size:8px;color:var(--muted)}.compactAlertShortcut i{font-style:normal;color:#94A3B8;font-size:18px}
@@ -303,9 +303,9 @@ button,input,select,textarea{font-family:inherit;font-variant-numeric:tabular-nu
 .kpiLineRight.warning strong,.severityBadge.yellow,.alertRow.yellow>span{color:#D97706}
 .kpiLineRight.danger strong,.samePeriodPair .down,.compareRisk{color:#DC2626}
 
-/* Domain cards: neutral white surface; domain hues are decorative only, never status */
+/* Domain cards: very light domain tint for recognition; status remains badge-only */
 .domainTile{
-  background:#FFFFFF!important;
+  background:var(--domain-card,#FFFFFF)!important;
   border:1px solid #E2E8F0!important;
   box-shadow:0 5px 18px rgba(15,23,42,.045)!important;
 }
@@ -503,3 +503,17 @@ button,input,select,textarea{font-family:inherit;font-variant-numeric:tabular-nu
 .compareConclusion.compareGood{background:#ECFDF5;color:#047857}.compareConclusion.compareRisk{background:#FEF2F2;color:#B91C1C}
 @media(max-width:700px){.executivePulse{grid-template-columns:1fr repeat(3,auto)}.executivePulse>div{grid-column:1/-1}.executivePulse>span,.executivePulse>button{font-size:8.5px;padding:5px 7px}}
 @media(max-width:520px){.chartFocusCard{inset:0;border-radius:0!important;border:0!important;padding:12px!important}.chartFocusCard .detailCardHead{top:-12px}.chartFocusCard .historyChart{min-height:290px}.domainTrend{font-size:8px!important}.executivePulse{margin-bottom:8px}}
+
+/* =========================================================
+   V1.7.3.1 — HOME PRIORITY · NICE Y AXIS · KPI DIFFICULTIES
+   ========================================================= */
+.homeAlertShortcut{margin:0 0 10px}
+.difficultyCompact{border-left:3px solid #D97706!important;background:#FFFBEB!important}
+.difficultyHeading{display:flex;align-items:flex-start;gap:9px;margin-bottom:8px}
+.difficultyHeading>span{width:24px;height:24px;flex:0 0 auto;border-radius:50%;display:grid;place-items:center;background:#FEF3C7;color:#B45309;font-size:12px;font-weight:900}
+.difficultyHeading>div{display:grid;gap:1px}.difficultyHeading b{font-size:14px;color:#1E293B}.difficultyHeading small{font-size:10px;line-height:1.4;color:#64748B}
+.difficultyCompact ul{margin:0;padding-left:18px;display:grid;gap:6px}.difficultyCompact li{font-size:13px;line-height:1.55;color:#334155}
+@media(max-width:520px){
+  .homeAlertShortcut{margin-bottom:8px}
+  .difficultyCompact li{font-size:12px}.difficultyHeading b{font-size:13px}.difficultyHeading small{font-size:9px}
+}

@@ -404,10 +404,48 @@ function smoothChartPath(values: number[], x: (index: number) => number, y: (val
   }).join(' ');
 }
 
-function axisLabel(value: number) {
+function niceStep(value: number) {
+  if (!Number.isFinite(value) || value <= 0) return 1;
+  const power = 10 ** Math.floor(Math.log10(value));
+  const normalized = value / power;
+  const factor = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 2.5 ? 2.5 : normalized <= 5 ? 5 : 10;
+  return factor * power;
+}
+
+function niceAxisScale(values: number[], includeZero = false) {
+  const finite = values.filter(Number.isFinite);
+  if (!finite.length) return { min: 0, max: 1, step: 0.5, ticks: [0, 0.5, 1] };
+  const rawMin = Math.min(...finite);
+  const rawMax = Math.max(...finite);
+  const magnitude = Math.max(Math.abs(rawMin), Math.abs(rawMax), 1);
+  const rawSpan = Math.max(rawMax - rawMin, 0);
+  const relativeSpan = rawSpan / magnitude;
+  let step = relativeSpan < 0.08
+    ? niceStep(Math.max(rawSpan / 2, magnitude * 0.01))
+    : niceStep(magnitude / 4);
+  if (magnitude >= 20 && step < 1) step = 1;
+  let min = includeZero ? 0 : Math.floor(rawMin / step) * step;
+  let max = Math.ceil(rawMax / step) * step;
+  if (min === max) {
+    min = includeZero ? 0 : Math.max(0, min - step);
+    max += step;
+  }
+  // Luôn có ít nhất 3 mốc để trục tung dễ đọc trên điện thoại.
+  while ((max - min) / step < 2) {
+    if (!includeZero && min - step >= 0) min -= step;
+    else max += step;
+  }
+  const ticks: number[] = [];
+  for (let value = min; value <= max + step * 0.01; value += step) {
+    ticks.push(Number(value.toPrecision(12)));
+    if (ticks.length >= 6) break;
+  }
+  return { min, max, step, ticks };
+}
+
+function axisLabel(value: number, step = 1) {
   if (!Number.isFinite(value)) return '—';
-  const abs = Math.abs(value);
-  const digits = abs >= 1000 ? 0 : abs >= 100 ? 0 : abs >= 10 ? 1 : 2;
+  const digits = step >= 1 ? 0 : step >= 0.1 ? 1 : 2;
   return value.toLocaleString('vi-VN', { maximumFractionDigits: digits });
 }
 
@@ -490,14 +528,13 @@ function HistoryChart({ data, kpiId, mode }: { data: DashboardBootstrap; kpiId: 
   const all = [...actualValues, ...planValues, ...forecastValues].filter(Number.isFinite) as number[];
   if (!all.length) return <div className="lockedPanel"><span>⌁</span><b>Chưa có dữ liệu biểu đồ</b><p>Hãy chọn kỳ có dữ liệu lịch sử.</p></div>;
 
-  const rawMax = Math.max(...all), rawMin = Math.min(...all);
-  const padding = Math.max((rawMax - rawMin) * .14, Math.abs(rawMax) * .05, 1);
-  const max = rawMax + padding, min = Math.max(0, rawMin - padding), span = Math.max(max - min, 1);
+  const axis = niceAxisScale(all);
+  const { min, max, step, ticks: gridValues } = axis;
+  const span = Math.max(max - min, step || 1);
   const plotLeft = 50, plotRight = 374, plotTop = 24, plotBottom = 132;
   const x = (index: number) => plotLeft + index * ((plotRight - plotLeft) / 11);
   const y = (value: number) => plotBottom - ((value - min) / span) * (plotBottom - plotTop);
   const actualPath = smoothChartPath(actualValues, x, y), planPath = smoothChartPath(planValues, x, y), forecastPath = smoothChartPath(forecastValues, x, y);
-  const gridValues = [min, min + span / 2, max];
   const detailIndex = activeIndex;
   const selectedPoint = detailIndex === null ? undefined : slots[detailIndex];
   const selectedPrior = detailIndex === null ? undefined : priorSlots[detailIndex];
@@ -515,7 +552,7 @@ function HistoryChart({ data, kpiId, mode }: { data: DashboardBootstrap; kpiId: 
     <div className="chartUnitLabel">Đơn vị: <b>{history.unit || 'Giá trị'}</b></div>
     <svg className="historyChart" viewBox="0 0 390 158" role="img" aria-label={`Biểu đồ ${mode === 'ytd' ? 'lũy kế' : 'dự báo'} ${kpiId}`}>
       <rect x={plotLeft} y={plotTop} width={plotRight - plotLeft} height={plotBottom - plotTop} className="chartPlotDismiss" onPointerDown={() => setSelectedIndex(null)} />
-      {gridValues.map((value, index) => <g key={`${value}-${index}`}><line x1={plotLeft} y1={y(value)} x2={plotRight} y2={y(value)} className={`chartGrid chartGrid${index}`} /><text x={plotLeft - 7} y={y(value) + 3.5} textAnchor="end" className="chartAxisLabel">{axisLabel(value)}</text></g>)}
+      {gridValues.map((value, index) => <g key={`${value}-${index}`}><line x1={plotLeft} y1={y(value)} x2={plotRight} y2={y(value)} className={`chartGrid chartGrid${index}`} /><text x={plotLeft - 7} y={y(value) + 3.5} textAnchor="end" className="chartAxisLabel">{axisLabel(value, step)}</text></g>)}
       <path d={planPath} className="chartPlan"/><path d={actualPath} className="chartActual"/>{mode === 'forecast' && forecast && <path d={forecastPath} className="chartForecast"/>}
       {slots.map((point,index)=>{const av=numericValue(mode==='ytd'?point?.ytd:point?.actual);const prev=index>0?slots[index-1]:undefined;if(index>=month||av===undefined||!isAnomalyPoint(history,point,prev))return null;return <g key={`anomaly-${index}`} className="chartAnomaly"><circle cx={x(index)} cy={y(av)} r="7"/><text x={x(index)} y={y(av)+3} textAnchor="middle">!</text></g>})}
       {slots.map((point,index)=>{const value=numericValue(mode === 'ytd' ? point?.ytd : point?.actual) ?? numericValue(mode === 'ytd' ? point?.planYtd : point?.planMonth);if(value===undefined)return null;return <circle key={index} cx={x(index)} cy={y(value)} r="14" className="chartTouchPoint" onPointerDown={(event)=>{event.stopPropagation();pin(index)}} onMouseEnter={()=>{if(selectedIndex===null)setHoveredIndex(index)}}/>})}
@@ -537,7 +574,9 @@ function MonthlyActualTargetChart({ data, kpiId }: { data: DashboardBootstrap; k
   const prior = useMemo(()=>Array.from({length:12},(_,i)=>source.find((p)=>p.period===`${Number(year)-1}-${String(i+1).padStart(2,'0')}`)),[source,year]);
   const values = points.flatMap((p)=>[numericValue(p?.actual),numericValue(p?.planMonth)]).filter((v):v is number=>v!==undefined);
   if(!values.length) return <div className="lockedPanel"><span>▥</span><b>Chưa có dữ liệu biểu đồ</b></div>;
-  const max=Math.max(...values,1)*1.12, min=Math.max(0,Math.min(...values)*.88), span=Math.max(max-min,1);
+  const axis=niceAxisScale(values);
+  const {min,max,step,ticks:grid}=axis;
+  const span=Math.max(max-min,step||1);
   const plotLeft=50,plotRight=374,plotTop=24,plotBottom=132;
   const x=(i:number)=>plotLeft+i*((plotRight-plotLeft)/11), y=(v:number)=>plotBottom-((v-min)/span)*(plotBottom-plotTop);
   const [selected,setSelected]=useState<number|null>(null), [hovered,setHovered]=useState<number|null>(null);
@@ -548,11 +587,11 @@ function MonthlyActualTargetChart({ data, kpiId }: { data: DashboardBootstrap; k
   const chosen=active===null?undefined:points[active], actual=numericValue(chosen?.actual), plan=numericValue(chosen?.planMonth), priorActual=numericValue(active===null?undefined:prior[active]?.actual);
   const ratio=actual!==undefined&&plan!==undefined&&plan!==0?actual/plan*100:undefined, sameDelta=changeDelta(actual,priorActual), hasDetail=active!==null&&(actual!==undefined||plan!==undefined);
   const currentIndex=Math.max(0,month-1), current=points[currentIndex], previous=currentIndex>0?points[currentIndex-1]:undefined, previousYear=prior[currentIndex];
-  const grid=[min,min+span/2,max], barWidth=15;
+  const barWidth=15;
   return <div className="historyChartWrap interactiveChartWrap adaptiveMonthlyChart" onMouseLeave={()=>setHovered(null)}>
     <div className="chartUnitLabel">Đơn vị: <b>{history.unit||'Giá trị'}</b></div>
     <svg className="historyChart" viewBox="0 0 390 158" role="img" aria-label={`Biểu đồ cột thực hiện và mốc kế hoạch ${kpiId}`}>
-      {grid.map((v,i)=><g key={i}><line x1={plotLeft} x2={plotRight} y1={y(v)} y2={y(v)} className={`chartGrid chartGrid${i}`}/><text x={plotLeft-7} y={y(v)+3.5} textAnchor="end" className="chartAxisLabel">{axisLabel(v)}</text></g>)}
+      {grid.map((v,i)=><g key={i}><line x1={plotLeft} x2={plotRight} y1={y(v)} y2={y(v)} className={`chartGrid chartGrid${i}`}/><text x={plotLeft-7} y={y(v)+3.5} textAnchor="end" className="chartAxisLabel">{axisLabel(v,step)}</text></g>)}
       {points.map((point,i)=>{const av=numericValue(point?.actual),pv=numericValue(point?.planMonth),cx=x(i),showActual=i<month&&av!==undefined;return <g key={i} className={`monthlyBarGroup ${active===i?'active':''}`}>
         {showActual&&<rect x={cx-barWidth/2} y={y(av!)} width={barWidth} height={Math.max(1,plotBottom-y(av!))} rx="4" className="monthlyActualBar"/>}
         {pv!==undefined&&<line x1={cx-10} x2={cx+10} y1={y(pv)} y2={y(pv)} className="monthlyPlanTarget"/>}
@@ -581,13 +620,15 @@ function SamePeriodColumnsChart({ data, kpiId }: { data: DashboardBootstrap; kpi
   const prior=useMemo(()=>Array.from({length:12},(_,i)=>source.find((p)=>p.period===`${Number(year)-1}-${String(i+1).padStart(2,'0')}`)),[source,year]);
   const values=[...current,...prior].flatMap((p)=>numericValue(p?.actual)===undefined?[]:[numericValue(p?.actual)!]);
   if(!values.length)return <div className="lockedPanel"><span>↔</span><b>Chưa có dữ liệu cùng kỳ</b></div>;
-  const max=Math.max(...values,1)*1.12, plotLeft=50,plotRight=374,plotTop=24,plotBottom=132, x=(i:number)=>plotLeft+i*((plotRight-plotLeft)/11),y=(v:number)=>plotBottom-(v/max)*(plotBottom-plotTop);
+  const axis=niceAxisScale(values,true);
+  const {max,step,ticks:grid}=axis;
+  const plotLeft=50,plotRight=374,plotTop=24,plotBottom=132, x=(i:number)=>plotLeft+i*((plotRight-plotLeft)/11),y=(v:number)=>plotBottom-(v/max)*(plotBottom-plotTop);
   const [selected,setSelected]=useState<number|null>(null),[hovered,setHovered]=useState<number|null>(null);useEffect(()=>{setSelected(null);setHovered(null)},[data.period,kpiId]);const active=selected??hovered;
   const pick=(event:{clientX:number;currentTarget:SVGRectElement})=>{const rect=event.currentTarget.getBoundingClientRect();return Math.max(0,Math.min(11,Math.round(((event.clientX-rect.left)/Math.max(rect.width,1))*11)))};
   const ca=numericValue(active===null?undefined:current[active]?.actual),pa=numericValue(active===null?undefined:prior[active]?.actual),delta=changeDelta(ca,pa),hasDetail=active!==null&&(ca!==undefined||pa!==undefined);
   return <div className="historyChartWrap interactiveChartWrap samePeriodColumns" onMouseLeave={()=>setHovered(null)}>
     <div className="chartUnitLabel">Đơn vị: <b>{history.unit||'Giá trị'}</b></div><svg className="historyChart" viewBox="0 0 390 158" role="img" aria-label="Biểu đồ cột cùng kỳ">
-      {[0,max/2,max].map((v,i)=><g key={i}><line x1={plotLeft} x2={plotRight} y1={y(v)} y2={y(v)} className={`chartGrid chartGrid${i}`}/><text x={plotLeft-7} y={y(v)+3.5} textAnchor="end" className="chartAxisLabel">{axisLabel(v)}</text></g>)}
+      {grid.map((v,i)=><g key={i}><line x1={plotLeft} x2={plotRight} y1={y(v)} y2={y(v)} className={`chartGrid chartGrid${i}`}/><text x={plotLeft-7} y={y(v)+3.5} textAnchor="end" className="chartAxisLabel">{axisLabel(v,step)}</text></g>)}
       {current.map((point,i)=>{const cv=numericValue(point?.actual),pv=numericValue(prior[i]?.actual),cx=x(i);return <g key={i}>{pv!==undefined&&<rect x={cx-11} y={y(pv)} width="9" height={plotBottom-y(pv)} rx="3" className="samePriorBar"/>}{i<month&&cv!==undefined&&<rect x={cx+2} y={y(cv)} width="9" height={plotBottom-y(cv)} rx="3" className="sameCurrentBar"/>}<text x={cx} y="151" textAnchor="middle" className={active===i?'chartLabel current':i===month-1?'chartLabel currentPeriod':'chartLabel'}>{`T${i+1}`}</text></g>})}
       <rect x={plotLeft-12} y={plotTop} width={plotRight-plotLeft+24} height={plotBottom-plotTop+24} className="chartScrubberLayer" onPointerDown={(event)=>{event.currentTarget.setPointerCapture?.(event.pointerId);setSelected(pick(event))}} onPointerMove={(event)=>{const idx=pick(event);if(event.pointerType==='mouse'&&event.buttons===0&&selected===null)setHovered(idx);else if(event.buttons!==0||event.pointerType==='touch')setSelected(idx)}}/>
       {active!==null&&<line x1={x(active)} x2={x(active)} y1={plotTop} y2={plotBottom} className="chartCurrentGuide"/>}
@@ -843,6 +884,55 @@ function isAnomalyPoint(history: MetricHistory, current?: MetricHistoryPoint, pr
   return change >= threshold;
 }
 
+const domainDifficultyDefaults: Record<string, string[]> = {
+  'kinh-doanh': [
+    'Biến động phụ tải, cơ cấu khách hàng và thời tiết có thể làm kết quả tháng thay đổi nhanh.',
+    'Cần duy trì dữ liệu kế hoạch tháng và cùng kỳ nhất quán để đánh giá chênh lệch chính xác.',
+  ],
+  dvkh: [
+    'Khối lượng yêu cầu dồn theo thời điểm và hồ sơ tồn có thể ảnh hưởng tỷ lệ hoàn thành.',
+    'Một số trường hợp cần phối hợp nhiều bộ phận nên thời gian xử lý có thể kéo dài.',
+  ],
+  'do-xa': [
+    'Chất lượng đường truyền, thiết bị đầu cuối và dữ liệu đo xa không đồng đều giữa các điểm đo.',
+    'Các điểm mất kết nối kéo dài cần được phân nhóm để xử lý đúng nguyên nhân.',
+  ],
+  'ky-thuat': [
+    'Sự cố đột xuất, điều kiện vận hành và thời tiết có thể làm chỉ tiêu biến động nhanh.',
+    'Cần ưu tiên các khu vực có xu hướng bất thường để tránh dồn khối lượng xử lý cuối kỳ.',
+  ],
+  'dau-tu-tai-chinh': [
+    'Thủ tục, vật tư, tiến độ nhà thầu và phối hợp hiện trường là các điểm nghẽn cần theo dõi.',
+    'Tiến độ giải ngân và khối lượng thực hiện có thể lệch nhau nếu hồ sơ nghiệm thu chưa đồng bộ.',
+  ],
+  'nhan-su': [
+    'Phân bổ nhân lực, lịch công tác và đào tạo chồng lấn có thể ảnh hưởng tiến độ thực hiện.',
+    'Cần theo dõi tải công việc giữa các nhóm để hạn chế mất cân đối nguồn lực.',
+  ],
+};
+
+function kpiDifficulties(data: DashboardBootstrap, domainId: string, item: KpiCard, presentation: KpiPresentation) {
+  const directAlerts = data.alerts
+    .filter((alert) => alert.kpiId === item.id)
+    .map((alert) => `${alert.title}${alert.note ? `: ${alert.note}` : ''}`);
+  const dynamic: string[] = [];
+  if (!presentation.plan && !item.plan) dynamic.push('Chưa có đầy đủ kế hoạch/ngưỡng chuẩn hóa cho KPI này nên khả năng đối chiếu còn hạn chế.');
+  if (item.tone === 'bad' || item.tone === 'warn') dynamic.push('Kết quả hiện tại đang cần theo dõi sát so với kế hoạch/ngưỡng để xử lý sớm chênh lệch.');
+  const history = data.history?.[item.id];
+  if (history) {
+    const year = data.period.slice(0, 4);
+    const month = Number(data.period.slice(5));
+    const points = Array.isArray(history.points) ? history.points.filter((point) => point.period.startsWith(`${year}-`)) : [];
+    const sorted = [...points].sort((a, b) => a.period.localeCompare(b.period));
+    const anomalyCount = sorted.reduce((count, point, index) => {
+      if (index === 0 || Number(point.period.slice(5)) > month) return count;
+      return count + (isAnomalyPoint(history, point, sorted[index - 1]) ? 1 : 0);
+    }, 0);
+    if (anomalyCount > 0) dynamic.push(`Có ${anomalyCount} tháng biến động đáng chú ý trong chuỗi dữ liệu hiện tại; cần kiểm tra nguyên nhân trước khi kết luận xu hướng.`);
+  }
+  return [...new Set([...directAlerts, ...dynamic, ...(domainDifficultyDefaults[domainId] ?? ['Cần tiếp tục theo dõi các yếu tố vận hành có thể ảnh hưởng kết quả KPI.'])])].slice(0, 3);
+}
+
 function DomainTile({ field, favorite, toggleFavorite, open, alertCount, alertTone, trend }: { field: FieldGroup; favorite: boolean; toggleFavorite: () => void; open: () => void; alertCount: number; alertTone: 'danger' | 'warning' | 'none'; trend: TrendSignal }) {
   const meta = domainMeta[field.id] ?? { icon: '▦', subtitle: 'Nhóm chỉ tiêu' };
   return (
@@ -902,6 +992,11 @@ function HomeTab({ data, favoriteDomains, toggleDomainFavorite, openDomain, open
         <span className="stable">→ {homeModel.pulse.stable} ổn định</span>
         <button className="worsen" onClick={goAlerts}>↓ {homeModel.pulse.worsen} xấu đi</button>
       </section>
+      <button className="compactAlertShortcut homeAlertShortcut" onClick={goAlerts}>
+        <span>⚠</span>
+        <div><b>{activeAlerts} vấn đề cần chú ý</b><small>Chạm để xem cảnh báo tháng hiện tại</small></div>
+        <i>›</i>
+      </button>
       <div className="sectionHeading compact">
         <div><b>Lĩnh vực</b><small>Chọn lĩnh vực để xem KPI tháng hiện tại</small></div>
         <button className="searchIcon" onClick={openSearch} aria-label="Tìm kiếm">⌕</button>
@@ -912,11 +1007,6 @@ function HomeTab({ data, favoriteDomains, toggleDomainFavorite, openDomain, open
           return <DomainTile key={field.id} field={field} favorite={favoriteDomains.includes(field.id)} toggleFavorite={() => toggleDomainFavorite(field.id)} open={() => openDomain(field.id)} alertCount={alertInfo.count} alertTone={alertInfo.tone} trend={homeModel.trendMap.get(field.id) ?? 'none'} />;
         })}
       </div>
-      <button className="compactAlertShortcut" onClick={goAlerts}>
-        <span>⚠</span>
-        <div><b>{activeAlerts} vấn đề cần chú ý</b><small>Chạm để xem cảnh báo tháng hiện tại</small></div>
-        <i>›</i>
-      </button>
     </>
   );
 }
@@ -1011,6 +1101,7 @@ function KpiDetail({ data, domainId, kpiId, favoriteKpis, toggleKpiFavorite, bac
   const planIds = officialPlanByDomain[domainId] ?? [];
   const official = data.plans.filter((plan) => planIds.includes(plan.id));
   const weatherTips = weatherAdviceForKpi(domainId,kpiId,weather);
+  const difficulties = kpiDifficulties(data, domainId, item, p);
   return (
     <>
       <div className="drillCompactHeader kpi">
@@ -1048,6 +1139,10 @@ function KpiDetail({ data, domainId, kpiId, favoriteKpis, toggleKpiFavorite, bac
       <section className="detailCard insightCompact">
         <div className="detailCardTitle">Nhận định</div>
         <ul>{(p.insight ?? []).map((text) => <li key={text}>{text}</li>)}</ul>
+      </section>
+      <section className="detailCard difficultyCompact">
+        <div className="difficultyHeading"><span>!</span><div><b>Khó khăn</b><small>Các yếu tố cần theo dõi trước khi triển khai giải pháp</small></div></div>
+        <ul>{difficulties.map((text) => <li key={text}>{text}</li>)}</ul>
       </section>
       <section className="compactSection">
         <div className="sectionHeading"><div><b>Giải pháp & Tư vấn</b><small>Vuốt ngang, chạm để xem chi tiết</small></div></div>
