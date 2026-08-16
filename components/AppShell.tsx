@@ -19,6 +19,7 @@ type SheetState =
   | { kind: 'alert'; alertId: string }
   | { kind: 'plan'; planId: string }
   | { kind: 'advice'; domainId: string; kpiId: string }
+  | { kind: 'kpi-plan'; domainId: string; kpiId: string }
   | { kind: 'weather' }
   | { kind: 'compare' };
 
@@ -429,75 +430,92 @@ function smoothChartPath(values: number[], x: (index: number) => number, y: (val
   }).join(' ');
 }
 
-function HistoryChart({ data, kpiId, mode }: { data: DashboardBootstrap; kpiId: string; mode: 'actual' | 'same' | 'forecast' }) {
+function axisLabel(value: number) {
+  if (!Number.isFinite(value)) return '—';
+  const abs = Math.abs(value);
+  const digits = abs >= 1000 ? 0 : abs >= 100 ? 0 : abs >= 10 ? 1 : 2;
+  return value.toLocaleString('vi-VN', { maximumFractionDigits: digits });
+}
+
+function HistoryChart({ data, kpiId, mode }: { data: DashboardBootstrap; kpiId: string; mode: 'actual' | 'ytd' | 'same' | 'forecast' }) {
   const history = data.history?.[kpiId];
-  if (!history) return null;
+  if (!history) return <div className="lockedPanel"><span>⌁</span><b>Chưa có dữ liệu biểu đồ</b></div>;
   const year = data.period.slice(0, 4);
   const month = Number(data.period.slice(5));
   const historyPoints = Array.isArray(history.points) ? history.points : [];
-  const points = historyPoints.filter((point) => point.period.startsWith(year));
-  const prior = historyPoints.filter((point) => point.period.startsWith(String(Number(year) - 1)));
+  const slots = Array.from({ length: 12 }, (_, index) => historyPoints.find((point) => point.period === `${year}-${String(index + 1).padStart(2, '0')}`));
+  const priorSlots = Array.from({ length: 12 }, (_, index) => historyPoints.find((point) => point.period === `${Number(year) - 1}-${String(index + 1).padStart(2, '0')}`));
   const forecast = forecastFor(history, data.period);
-  const actualValues = points.map((point, index) => index < month ? (numericValue(point.actual) ?? NaN) : NaN);
-  const planValues = points.map((point) => numericValue(point.planMonth) ?? NaN);
-  const sameValues = prior.map((point) => numericValue(point.actual) ?? NaN);
-  const forecastValues = points.map((_, index) => {
+  const [selectedIndex, setSelectedIndex] = useState(Math.max(0, month - 1));
+  useEffect(() => setSelectedIndex(Math.max(0, month - 1)), [data.period, kpiId]);
+
+  const actualValues = slots.map((point, index) => index < month ? (numericValue(mode === 'ytd' ? point?.ytd : point?.actual) ?? NaN) : NaN);
+  const planValues = slots.map((point) => numericValue(mode === 'ytd' ? point?.planYtd : point?.planMonth) ?? NaN);
+  const sameValues = priorSlots.map((point) => numericValue(point?.actual) ?? NaN);
+  const forecastValues = slots.map((point, index) => {
     if (index < month - 1) return NaN;
-    if (index === month - 1) return numericValue(points[index]?.actual) ?? NaN;
+    if (index === month - 1) return numericValue(point?.actual) ?? NaN;
     return forecast?.future[index - month] ?? NaN;
   });
   const all = [...actualValues, ...planValues, ...(mode === 'same' ? sameValues : []), ...(mode === 'forecast' ? forecastValues : [])].filter(Number.isFinite) as number[];
-  const rawMax = all.length ? Math.max(...all) : 1;
-  const rawMin = all.length ? Math.min(...all) : 0;
-  const padding = Math.max((rawMax - rawMin) * .14, rawMax * .05, 1);
+  if (!all.length) return <div className="lockedPanel"><span>⌁</span><b>Chưa có dữ liệu biểu đồ</b><p>Hãy chọn kỳ có dữ liệu lịch sử.</p></div>;
+
+  const rawMax = Math.max(...all);
+  const rawMin = Math.min(...all);
+  const padding = Math.max((rawMax - rawMin) * .14, Math.abs(rawMax) * .05, 1);
   const max = rawMax + padding;
   const min = Math.max(0, rawMin - padding);
   const span = Math.max(max - min, 1);
-  const x = (index: number) => 20 + index * (320 / 11);
-  const y = (value: number) => 116 - ((value - min) / span) * 86;
+  const plotLeft = 50, plotRight = 374, plotTop = 24, plotBottom = 132;
+  const x = (index: number) => plotLeft + index * ((plotRight - plotLeft) / 11);
+  const y = (value: number) => plotBottom - ((value - min) / span) * (plotBottom - plotTop);
   const actualPath = smoothChartPath(actualValues, x, y);
   const planPath = smoothChartPath(planValues, x, y);
   const samePath = smoothChartPath(sameValues, x, y);
   const forecastPath = smoothChartPath(forecastValues, x, y);
-  const currentIndex = Math.max(0, Math.min(month - 1, points.length - 1));
-  const currentPoint = points[currentIndex];
-  const currentValue = numericValue(currentPoint?.actual);
-  const currentX = x(currentIndex);
-  const currentY = currentValue === undefined ? 0 : y(currentValue);
-  const tooltipWidth = 112;
-  const tooltipX = Math.max(5, Math.min(360 - tooltipWidth - 5, currentX - tooltipWidth / 2));
-  const tooltipY = Math.max(5, currentY - 31);
-  const planReference = numericValue(currentPoint?.planMonth) ?? planValues.find(Number.isFinite) ?? rawMax;
-  const gridValues = [rawMin, planReference, rawMax];
+  const gridValues = [min, min + span / 2, max];
+
+  const selectedPoint = slots[selectedIndex];
+  const selectedPrior = priorSlots[selectedIndex];
+  const selectedActual = numericValue(mode === 'ytd' ? selectedPoint?.ytd : selectedPoint?.actual);
+  const selectedPlan = numericValue(mode === 'ytd' ? selectedPoint?.planYtd : selectedPoint?.planMonth);
+  const selectedPriorActual = numericValue(selectedPrior?.actual);
+  const ratio = selectedActual !== undefined && selectedPlan !== undefined && selectedPlan !== 0 ? selectedActual / selectedPlan * 100 : undefined;
+  const sameDelta = selectedActual !== undefined && selectedPriorActual !== undefined && selectedPriorActual !== 0 ? (selectedActual / selectedPriorActual - 1) * 100 : undefined;
+  const selectedX = x(selectedIndex);
+  const selectedY = selectedActual === undefined ? plotBottom : y(selectedActual);
+  const choose = (index: number) => setSelectedIndex(index);
+
   return (
-    <div className="historyChartWrap">
-      <svg className="historyChart" viewBox="0 0 360 148" role="img" aria-label={`Biểu đồ ${kpiId}`}>
-        {gridValues.map((value, index) => (
-          <line key={`${value}-${index}`} x1="20" y1={y(value)} x2="340" y2={y(value)} className={`chartGrid chartGrid${index}`} />
-        ))}
+    <div className="historyChartWrap interactiveChartWrap">
+      <div className="chartUnitLabel">Đơn vị: <b>{history.unit || 'Giá trị'}</b></div>
+      <svg className="historyChart" viewBox="0 0 390 158" role="img" aria-label={`Biểu đồ tương tác ${kpiId}`}>
+        {gridValues.map((value, index) => <g key={`${value}-${index}`}><line x1={plotLeft} y1={y(value)} x2={plotRight} y2={y(value)} className={`chartGrid chartGrid${index}`} /><text x={plotLeft - 7} y={y(value) + 3.5} textAnchor="end" className="chartAxisLabel">{axisLabel(value)}</text></g>)}
         <path d={planPath} className="chartPlan" />
         {mode === 'same' && <path d={samePath} className="chartSame" />}
         <path d={actualPath} className="chartActual" />
         {mode === 'forecast' && forecast && <path d={forecastPath} className="chartForecast" />}
-        {currentValue !== undefined && Number.isFinite(currentValue) && (
-          <g className="chartCurrentAnchor">
-            <line x1={currentX} y1={currentY} x2={currentX} y2="116" className="chartCurrentGuide" />
-            <circle cx={currentX} cy={currentY} r="5" className="chartAnchor" />
-            <rect x={tooltipX} y={tooltipY} width={tooltipWidth} height="22" rx="7" className="chartTooltipBg" />
-            <text x={tooltipX + tooltipWidth / 2} y={tooltipY + 14.5} textAnchor="middle" className="chartTooltipText">{metricFormat(history, currentValue)}</text>
-          </g>
-        )}
-        {points.map((_, index) => <text key={index} x={x(index)} y="140" textAnchor="middle" className={index === currentIndex ? 'chartLabel current' : 'chartLabel'}>T{index + 1}</text>)}
+        {slots.map((point, index) => {
+          const value = numericValue(mode === 'ytd' ? point?.ytd : point?.actual);
+          if (value === undefined || index >= month) return null;
+          return <circle key={`hit-${index}`} cx={x(index)} cy={y(value)} r="12" className="chartTouchPoint" onPointerDown={() => choose(index)} onMouseEnter={() => choose(index)} role="button" aria-label={`Xem dữ liệu tháng ${index + 1}`} />;
+        })}
+        {selectedActual !== undefined && selectedIndex < month && <g className="chartSelectedAnchor"><line x1={selectedX} y1={selectedY} x2={selectedX} y2={plotBottom} className="chartCurrentGuide" /><circle cx={selectedX} cy={selectedY} r="5" className="chartAnchor" /></g>}
+        {Array.from({ length: 12 }, (_, index) => <text key={index} x={x(index)} y="151" textAnchor="middle" className={index === selectedIndex ? 'chartLabel current' : 'chartLabel'} onPointerDown={() => choose(index)}>{`T${index + 1}`}</text>)}
       </svg>
-      <div className="chartLegend">
-        <span className="actual">TH</span><span className="plan">KH</span>
-        {mode === 'same' && <span className="same">Cùng kỳ {Number(year) - 1}</span>}
-        {mode === 'forecast' && <span className="forecast">Dự báo</span>}
-      </div>
+      {selectedActual !== undefined && <div className="chartFloatingPopup" role="status">
+        <div><b>{`T${selectedIndex + 1}/${year}`}</b><span>{mode === 'ytd' ? 'Lũy kế' : 'Chi tiết điểm dữ liệu'}</span></div>
+        <dl>
+          <div><dt>TH</dt><dd>{metricFormat(history, selectedActual)}</dd></div>
+          <div><dt>KH</dt><dd>{metricFormat(history, selectedPlan)}</dd></div>
+          <div><dt>TH/KH</dt><dd>{ratio === undefined ? '—' : `${ratio.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}%`}</dd></div>
+          <div><dt>Cùng kỳ</dt><dd>{sameDelta === undefined ? '—' : `${sameDelta >= 0 ? '+' : ''}${sameDelta.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}%`}</dd></div>
+        </dl>
+      </div>}
+      <div className="chartLegend"><span className="actual">TH</span><span className="plan">KH</span>{mode === 'same' && <span className="same">Cùng kỳ {Number(year) - 1}</span>}{mode === 'forecast' && <span className="forecast">Dự báo</span>}<small>Chạm điểm hoặc T1–T12 để xem chi tiết</small></div>
     </div>
   );
 }
-
 
 function chartKindFor(kpiId:string, history:MetricHistory) {
   if (kpiId === 'KT_SC') return 'pareto';
@@ -510,61 +528,62 @@ function chartKindFor(kpiId:string, history:MetricHistory) {
 function GaugeChart({ history, point }: { history:MetricHistory; point:MetricHistoryPoint }) {
   const actual = numericValue(point.actual);
   const plan = numericValue(point.planMonth);
+  const [open,setOpen]=useState(false);
   if (actual === undefined) return <div className="lockedPanel"><span>◌</span><b>Chưa có dữ liệu thực hiện</b></div>;
   const rawRatio = plan && plan !== 0 ? actual / plan * 100 : 100;
   const score = history.direction === 'lower' && plan !== undefined ? Math.min(100, plan / Math.max(actual,.00001) * 100) : Math.min(100, rawRatio);
-  const radius = 42;
-  const circumference = 2*Math.PI*radius;
-  return (
-    <div className="adaptiveGauge">
-      <svg viewBox="0 0 120 120" role="img" aria-label="Biểu đồ tỷ lệ hoàn thành">
-        <circle cx="60" cy="60" r={radius} className="gaugeTrack" />
-        <circle cx="60" cy="60" r={radius} className="gaugeValue" strokeDasharray={`${circumference*score/100} ${circumference}`} />
-        <text x="60" y="56" textAnchor="middle" className="gaugeMain">{rawRatio.toLocaleString('vi-VN',{maximumFractionDigits:1})}%</text>
-        <text x="60" y="72" textAnchor="middle" className="gaugeSub">TH / KH tháng</text>
-      </svg>
-      <div className="gaugeFacts"><span><small>Thực hiện</small><b>{metricFormat(history,actual)}</b></span><span><small>Kế hoạch</small><b>{metricFormat(history,plan)}</b></span></div>
-    </div>
-  );
+  const radius = 42, circumference = 2*Math.PI*radius;
+  return <div className="adaptiveGauge interactiveSnapshot" onClick={()=>setOpen((v)=>!v)} role="button" tabIndex={0}>
+    <svg viewBox="0 0 120 120" role="img" aria-label="Biểu đồ tỷ lệ hoàn thành"><circle cx="60" cy="60" r={radius} className="gaugeTrack"/><circle cx="60" cy="60" r={radius} className="gaugeValue" strokeDasharray={`${circumference*score/100} ${circumference}`}/><text x="60" y="56" textAnchor="middle" className="gaugeMain">{rawRatio.toLocaleString('vi-VN',{maximumFractionDigits:1})}%</text><text x="60" y="72" textAnchor="middle" className="gaugeSub">TH / KH tháng</text></svg>
+    <div className="gaugeFacts"><span><small>Thực hiện</small><b>{metricFormat(history,actual)}</b></span><span><small>Kế hoạch</small><b>{metricFormat(history,plan)}</b></span></div>
+    {open && <div className="snapshotPopup"><b>Chi tiết chỉ tiêu</b><span>TH: {metricFormat(history,actual)}</span><span>KH: {metricFormat(history,plan)}</span><span>Tỷ lệ: {rawRatio.toLocaleString('vi-VN',{maximumFractionDigits:1})}%</span></div>}
+  </div>;
 }
 
 function ThresholdChart({ history, point }: { history:MetricHistory; point:MetricHistoryPoint }) {
-  const actual = numericValue(point.actual);
-  const plan = numericValue(point.planMonth);
+  const actual = numericValue(point.actual), plan = numericValue(point.planMonth);
+  const [open,setOpen]=useState(false);
   if (actual === undefined) return <div className="lockedPanel"><span>—</span><b>Chưa có dữ liệu thực hiện</b></div>;
-  const max = Math.max(actual,plan ?? 0,1)*1.25;
-  const actualWidth = Math.min(100,actual/max*100);
-  const planLeft = plan === undefined ? undefined : Math.min(100,plan/max*100);
+  const max = Math.max(actual,plan ?? 0,1)*1.25, actualWidth=Math.min(100,actual/max*100), planLeft=plan===undefined?undefined:Math.min(100,plan/max*100);
   const good = plan === undefined ? true : history.direction === 'lower' ? actual <= plan : actual >= plan;
-  return (
-    <div className="thresholdChart">
-      <div className="thresholdLabels"><span><small>TH</small><b>{metricFormat(history,actual)}</b></span><span><small>Ngưỡng/KH</small><b>{metricFormat(history,plan)}</b></span></div>
-      <div className="thresholdTrack"><span className={good?'good':'risk'} style={{width:`${actualWidth}%`}}/>{planLeft !== undefined && <i style={{left:`${planLeft}%`}} title="Ngưỡng kế hoạch"/>}</div>
-      <small>{history.direction==='lower'?'Vạch đứng là mức tối đa/khuyến nghị':'Vạch đứng là kế hoạch cần đạt'}</small>
-    </div>
-  );
+  return <div className="thresholdChart interactiveSnapshot" onClick={()=>setOpen((v)=>!v)} role="button" tabIndex={0}>
+    <div className="thresholdLabels"><span><small>TH</small><b>{metricFormat(history,actual)}</b></span><span><small>Ngưỡng/KH</small><b>{metricFormat(history,plan)}</b></span></div>
+    <div className="thresholdTrack"><span className={good?'good':'risk'} style={{width:`${actualWidth}%`}}/>{planLeft!==undefined&&<i style={{left:`${planLeft}%`}} title="Ngưỡng kế hoạch"/>}</div>
+    <small>{history.direction==='lower'?'Vạch đứng là mức tối đa/khuyến nghị':'Vạch đứng là kế hoạch cần đạt'} · Chạm để xem chi tiết</small>
+    {open && <div className="snapshotPopup"><b>{good?'Đang trong ngưỡng':'Cần chú ý'}</b><span>TH: {metricFormat(history,actual)}</span><span>KH/ngưỡng: {metricFormat(history,plan)}</span></div>}
+  </div>;
 }
 
 function MonthlyColumnsChart({ data, kpiId }: { data:DashboardBootstrap; kpiId:string }) {
   const history=data.history?.[kpiId];
   if(!history) return null;
   const year=data.period.slice(0,4), month=Number(data.period.slice(5));
-  const points=(Array.isArray(history.points)?history.points:[]).filter((x)=>x.period.startsWith(year));
-  const numericPairs=points.flatMap((x)=>[numericValue(x.actual),numericValue(x.planMonth)]).filter((value): value is number => value !== undefined);
-  const max=Math.max(...numericPairs,1);
-  return <div className="columnChartWrap"><div className="columnChart">{points.map((point,i)=>{
-    const showActual=i<month;
-    const actual=numericValue(point.actual);
-    const plan=numericValue(point.planMonth);
-    return <div className="columnGroup" key={point.period}><div className="columns"><i className="plan" style={{height:plan===undefined?'0%':`${Math.max(3,plan/max*92)}%`}}/><i className="actual" style={{height:showActual&&actual!==undefined?`${Math.max(3,actual/max*92)}%`:'0%'}}/></div><small>T{i+1}</small></div>;
-  })}</div><div className="chartLegend"><span className="actual">TH</span><span className="plan">KH</span></div></div>;
+  const source=Array.isArray(history.points)?history.points:[];
+  const points=Array.from({length:12},(_,i)=>source.find((x)=>x.period===`${year}-${String(i+1).padStart(2,'0')}`));
+  const values=points.flatMap((x)=>[numericValue(x?.actual),numericValue(x?.planMonth)]).filter((v):v is number=>v!==undefined);
+  if(!values.length) return <div className="lockedPanel"><span>▥</span><b>Chưa có dữ liệu biểu đồ</b></div>;
+  const max=Math.max(...values,1)*1.12, plotLeft=50,plotRight=374,plotTop=24,plotBottom=132;
+  const x=(i:number)=>plotLeft+i*((plotRight-plotLeft)/11), y=(v:number)=>plotBottom-(v/max)*(plotBottom-plotTop);
+  const [selected,setSelected]=useState(Math.max(0,month-1));
+  useEffect(()=>setSelected(Math.max(0,month-1)),[data.period,kpiId]);
+  const chosen=points[selected], actual=numericValue(chosen?.actual), plan=numericValue(chosen?.planMonth), ratio=actual!==undefined&&plan?actual/plan*100:undefined;
+  return <div className="historyChartWrap interactiveChartWrap">
+    <div className="chartUnitLabel">Đơn vị: <b>{history.unit||'Giá trị'}</b></div>
+    <svg className="historyChart" viewBox="0 0 390 158" role="img" aria-label="Biểu đồ cột tương tác">
+      {[0,max/2,max].map((v,i)=><g key={i}><line x1={plotLeft} x2={plotRight} y1={y(v)} y2={y(v)} className={`chartGrid chartGrid${i}`}/><text x={plotLeft-7} y={y(v)+3.5} textAnchor="end" className="chartAxisLabel">{axisLabel(v)}</text></g>)}
+      {points.map((point,i)=>{const av=numericValue(point?.actual),pv=numericValue(point?.planMonth),cx=x(i);return <g key={i} onPointerDown={()=>setSelected(i)} className="columnSvgGroup"><rect x={cx-9} y={pv===undefined?plotBottom:y(pv)} width="7" height={pv===undefined?0:plotBottom-y(pv)} rx="2" className="columnPlanSvg"/><rect x={cx+2} y={i<month&&av!==undefined?y(av):plotBottom} width="7" height={i<month&&av!==undefined?plotBottom-y(av):0} rx="2" className="columnActualSvg"/><rect x={cx-13} y={plotTop} width="26" height={plotBottom-plotTop+10} className="chartTouchBar"/><text x={cx} y="151" textAnchor="middle" className={selected===i?'chartLabel current':'chartLabel'}>{`T${i+1}`}</text></g>})}
+    </svg>
+    {actual!==undefined&&<div className="chartFloatingPopup"><div><b>{`T${selected+1}/${year}`}</b><span>Chi tiết cột</span></div><dl><div><dt>TH</dt><dd>{metricFormat(history,actual)}</dd></div><div><dt>KH</dt><dd>{metricFormat(history,plan)}</dd></div><div><dt>TH/KH</dt><dd>{ratio===undefined?'—':`${ratio.toLocaleString('vi-VN',{maximumFractionDigits:1})}%`}</dd></div></dl></div>}
+    <div className="chartLegend"><span className="actual">TH</span><span className="plan">KH</span><small>Chạm cột/tháng để xem chi tiết</small></div>
+  </div>;
 }
 
 function ParetoIncidentChart({ data }: { data:DashboardBootstrap }) {
   const causes=Array.isArray(data.incidentCauses)?data.incidentCauses:[];
+  const [selected,setSelected]=useState(0);
   if(!causes.length) return <div className="lockedPanel"><span>≡</span><b>Chưa có cơ cấu nguyên nhân sự cố</b></div>;
-  const max=Math.max(...causes.map((x)=>numericValue(x.monthShare)??0),1);
-  return <div className="paretoChart"><div className="paretoTitle">Cơ cấu nguyên nhân sự cố tháng</div>{causes.slice(0,5).map((cause)=><div className="paretoRow" key={cause.label}><span>{cause.label}</span><div><i style={{width:`${(numericValue(cause.monthShare)??0)/max*100}%`}}/></div><b>{metricFormat({id:'incident',unit:'%',direction:'info',aggregate:'snapshot',decimals:1,annualPlans:{},points:[]},cause.monthShare)}</b></div>)}</div>;
+  const max=Math.max(...causes.map((x)=>numericValue(x.monthShare)??0),1), picked=causes[Math.min(selected,causes.length-1)];
+  return <div className="paretoChart interactivePareto"><div className="paretoTitle">Cơ cấu nguyên nhân sự cố tháng <small>· chạm thanh để xem chi tiết</small></div>{causes.slice(0,5).map((cause,i)=><button className={`paretoRow ${selected===i?'active':''}`} key={cause.label} onClick={()=>setSelected(i)}><span>{cause.label}</span><div><i style={{width:`${(numericValue(cause.monthShare)??0)/max*100}%`}}/></div><b>{metricFormat({id:'incident',unit:'%',direction:'info',aggregate:'snapshot',decimals:1,annualPlans:{},points:[]},cause.monthShare)}</b></button>)}<div className="paretoPopup"><b>{picked.label}</b><span>Tháng: {picked.monthValue} vụ · {picked.monthShare}%</span><span>Lũy kế: {picked.ytdValue} vụ · {picked.ytdShare}%</span></div></div>;
 }
 
 function AdaptiveCurrentChart({ data, kpiId }: { data:DashboardBootstrap; kpiId:string }) {
@@ -836,53 +855,13 @@ function KpiRow({ data, item, favorite, toggleFavorite, open }: { data: Dashboar
   );
 }
 
-function AlertCarousel({ alerts, openAlert }: { alerts: DashboardBootstrap['alerts']; openAlert: (id: string) => void }) {
-  if (!alerts.length) return null;
-  return (
-    <section className="compactSection">
-      <div className="sectionHeading"><div><b>Cần chú ý</b><small>Vuốt ngang để xem các điểm nóng</small></div></div>
-      <div className="horizontalCarousel">
-        {alerts.map((alert) => (
-          <button key={alert.id} className={`carouselCard alert ${alert.severity}`} onClick={() => openAlert(alert.id)}>
-            <span>{alert.severity === 'red' ? '!' : '•'}</span>
-            <small>{alert.domain}</small>
-            <b>{alert.title}</b>
-            <strong>{alert.current}</strong>
-          </button>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function PlanCarousel({ plans, openPlan, isDemo }: { plans: DashboardBootstrap['plans']; openPlan: (id: string) => void; isDemo: boolean }) {
-  if (!plans.length) return null;
-  return (
-    <section className="compactSection">
-      <div className="sectionHeading"><div><b>Giải pháp</b><small>{isDemo ? 'Giải pháp giả lập để test luồng' : 'Trích từ kế hoạch trong báo cáo'}</small></div></div>
-      <div className="horizontalCarousel">
-        {plans.map((plan) => (
-          <button key={plan.id} className="carouselCard plan" onClick={() => openPlan(plan.id)}>
-            <span>→</span>
-            <small>{plan.owner}</small>
-            <b>{plan.title}</b>
-            <strong>{plan.status}</strong>
-          </button>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function DomainDetail({ data, domainId, favoriteKpis, toggleKpiFavorite, back, openKpi, openAlert, openPlan }: {
+function DomainDetail({ data, domainId, favoriteKpis, toggleKpiFavorite, back, openKpi }: {
   data: DashboardBootstrap;
   domainId: string;
   favoriteKpis: string[];
   toggleKpiFavorite: (id: string) => void;
   back: () => void;
   openKpi: (domainId: string, kpiId: string) => void;
-  openAlert: (id: string) => void;
-  openPlan: (id: string) => void;
 }) {
   const field = data.fields.find((x) => x.id === domainId);
   const [filter, setFilter] = useState<'all' | 'attention' | 'favorite'>('all');
@@ -890,9 +869,6 @@ function DomainDetail({ data, domainId, favoriteKpis, toggleKpiFavorite, back, o
   const visible = field.items
     .filter((item) => filter === 'all' || (filter === 'attention' && ['bad', 'warn'].includes(item.tone)) || (filter === 'favorite' && favoriteKpis.includes(item.id)))
     .sort((a, b) => Number(favoriteKpis.includes(b.id)) - Number(favoriteKpis.includes(a.id)));
-  const alerts = domainAlerts(data, domainId);
-  const planIds = officialPlanByDomain[domainId] ?? [];
-  const plans = data.plans.filter((p) => planIds.includes(p.id));
   return (
     <>
       <div className="drillCompactHeader">
@@ -917,8 +893,7 @@ function DomainDetail({ data, domainId, favoriteKpis, toggleKpiFavorite, back, o
         ))}
         {!visible.length && <div className="emptyState">Chưa có KPI phù hợp bộ lọc.</div>}
       </section>
-      <AlertCarousel alerts={alerts} openAlert={openAlert} />
-      <PlanCarousel plans={plans} openPlan={openPlan} isDemo={data.dataMode === 'demo'} />
+      <div className="domainDetailHint"><span>✓</span><p><b>Không lặp nội dung.</b> Cảnh báo xem tại tab Cảnh báo; kế hoạch hành động xem tại tab Kế hoạch.</p></div>
     </>
   );
 }
@@ -937,7 +912,7 @@ function DetailProgress({ item, presentation }: { item: KpiCard; presentation: K
   );
 }
 
-function KpiDetail({ data, domainId, kpiId, favoriteKpis, toggleKpiFavorite, back, openAdvice, comparison, openCompare, weather }: {
+function KpiDetail({ data, domainId, kpiId, favoriteKpis, toggleKpiFavorite, back, openAdvice, openPlanDetail, comparison, openCompare, weather }: {
   data: DashboardBootstrap;
   domainId: string;
   kpiId: string;
@@ -945,6 +920,7 @@ function KpiDetail({ data, domainId, kpiId, favoriteKpis, toggleKpiFavorite, bac
   toggleKpiFavorite: (id: string) => void;
   back: () => void;
   openAdvice: () => void;
+  openPlanDetail: () => void;
   comparison:ComparisonSelection;
   openCompare:()=>void;
   weather:WeatherBundle | null;
@@ -969,23 +945,27 @@ function KpiDetail({ data, domainId, kpiId, favoriteKpis, toggleKpiFavorite, bac
         <strong>{p.primaryValue ?? item.value}</strong>
         <div className="kpiFirstMeta">
           <span>{p.comparison ?? toneLabel(item.tone, item.status)}</span>
-          {p.ytd && <span>Lũy kế: {p.ytd}</span>}
         </div>
       </section>
-      <div className="pillTabs detailModeTabs">
-        <button className={mode === 'compare' ? 'active' : ''} onClick={() => setMode('compare')}>TH/KH</button>
-        <button className={mode === 'ytd' ? 'active' : ''} onClick={() => setMode('ytd')}>Lũy kế</button>
-        <button className={mode === 'same' ? 'active' : ''} onClick={() => setMode('same')}>Cùng kỳ</button>
-        <button className={mode === 'range' ? 'active' : ''} onClick={() => setMode('range')}>So sánh kỳ</button>
-        <button className={mode === 'forecast' ? 'active' : ''} onClick={() => setMode('forecast')}>Dự báo</button>
+      <div className="detailControlRow">
+        <div className="pillTabs detailModeTabs">
+          <button className={mode === 'compare' ? 'active' : ''} onClick={() => setMode('compare')}>Trong tháng</button>
+          <button className={mode === 'ytd' ? 'active' : ''} onClick={() => setMode('ytd')}>Lũy kế</button>
+          <button className={mode === 'same' ? 'active' : ''} onClick={() => setMode('same')}>Cùng kỳ</button>
+          <button className={mode === 'forecast' ? 'active' : ''} onClick={() => setMode('forecast')}>Dự báo</button>
+        </div>
+        <button className={`compareFilterBtn ${mode === 'range' ? 'active' : ''}`} onClick={() => { setMode('range'); openCompare(); }}>⇄ So sánh</button>
       </div>
       <section className="detailCard">
-        {mode === 'compare' && <><div className="detailCardTitle">Biểu đồ phù hợp loại chỉ tiêu</div><AdaptiveCurrentChart data={data} kpiId={item.id}/><p>{p.plan ?? item.plan ?? 'Chưa có kế hoạch chuẩn hóa cho kỳ này.'}</p></>}
-        {mode === 'ytd' && <><div className="statPair"><div><small>Lũy kế / hiện trạng</small><b>{p.ytd ?? item.detail ?? item.value}</b></div><span>↔</span><div><small>Kế hoạch / ngưỡng</small><b>{p.plan ?? item.plan ?? 'Chưa có'}</b></div></div>{data.history?.[item.id] && <HistoryChart data={data} kpiId={item.id} mode="actual" />}</>}
+        {mode === 'compare' && <><div className="detailCardTitle">Thực hiện tháng & kế hoạch</div><AdaptiveCurrentChart data={data} kpiId={item.id}/></>}
+        {mode === 'ytd' && <><div className="statPair"><div><small>Lũy kế / hiện trạng</small><b>{p.ytd ?? item.detail ?? item.value}</b></div><span>↔</span><div><small>Kế hoạch / ngưỡng</small><b>{p.plan ?? item.plan ?? 'Chưa có'}</b></div></div>{data.history?.[item.id] && <HistoryChart data={data} kpiId={item.id} mode="ytd" />}</>}
         {mode === 'same' && <SamePeriodPanel data={data} kpiId={item.id} />}
         {mode === 'range' && <RangeComparisonPanel data={data} kpiId={item.id} comparison={comparison} edit={openCompare}/>} 
         {mode === 'forecast' && <ForecastPanel data={data} kpiId={item.id} />}
       </section>
+      <button className="kpiPlanTrigger" onClick={openPlanDetail}>
+        <span>◎</span><div><small>Kế hoạch / ngưỡng</small><b>{p.plan ?? item.plan ?? 'Chưa có kế hoạch chuẩn hóa'}</b></div><i>›</i>
+      </button>
       <section className="detailCard insightCompact">
         <div className="detailCardTitle">Nhận định</div>
         <ul>{(p.insight ?? []).map((text) => <li key={text}>{text}</li>)}</ul>
@@ -1171,9 +1151,9 @@ export default function AppShell() {
 
   let content: ReactNode;
   if (view.kind === 'kpi') {
-    content = <KpiDetail data={data} domainId={view.domainId} kpiId={view.kpiId} favoriteKpis={favoriteKpis} toggleKpiFavorite={toggleKpiFavorite} back={backFromKpi} openAdvice={() => setSheet({ kind: 'advice', domainId: view.domainId, kpiId: view.kpiId })} comparison={comparison} openCompare={() => setSheet({kind:'compare'})} weather={weather} />;
+    content = <KpiDetail data={data} domainId={view.domainId} kpiId={view.kpiId} favoriteKpis={favoriteKpis} toggleKpiFavorite={toggleKpiFavorite} back={backFromKpi} openAdvice={() => setSheet({ kind: 'advice', domainId: view.domainId, kpiId: view.kpiId })} openPlanDetail={() => setSheet({ kind: 'kpi-plan', domainId: view.domainId, kpiId: view.kpiId })} comparison={comparison} openCompare={() => setSheet({kind:'compare'})} weather={weather} />;
   } else if (view.kind === 'domain') {
-    content = <DomainDetail data={data} domainId={view.domainId} favoriteKpis={favoriteKpis} toggleKpiFavorite={toggleKpiFavorite} back={() => setView({ kind: 'root' })} openKpi={(d, k) => openKpi(d, k, 'domain')} openAlert={(id) => setSheet({ kind: 'alert', alertId: id })} openPlan={(id) => setSheet({ kind: 'plan', planId: id })} />;
+    content = <DomainDetail data={data} domainId={view.domainId} favoriteKpis={favoriteKpis} toggleKpiFavorite={toggleKpiFavorite} back={() => setView({ kind: 'root' })} openKpi={(d, k) => openKpi(d, k, 'domain')} />;
   } else if (tab === 'home') {
     content = <HomeTab data={data} favoriteDomains={favoriteDomains} toggleDomainFavorite={toggleDomainFavorite} openDomain={openDomain} openSearch={() => setSheet({ kind: 'search' })} goAlerts={() => switchTab('alerts')} />;
   } else if (tab === 'alerts') {
@@ -1206,8 +1186,45 @@ export default function AppShell() {
   } else if (sheet?.kind === 'plan') {
     const plan = data.plans.find((p) => p.id === sheet.planId);
     if (plan) {
+      const objective = plan.objective ?? `Bảo đảm tiến độ ${plan.title.toLowerCase()} và hạn chế phát sinh chỉ tiêu không đạt.`;
+      const actions = plan.actions?.length ? plan.actions : [plan.title, 'Theo dõi tiến độ theo tuần và cập nhật các vướng mắc.', 'Đánh giá kết quả cuối kỳ và đề xuất điều chỉnh khi cần.'];
+      const expectedResult = plan.expectedResult ?? 'Hoàn thành đúng tiến độ, có số liệu xác nhận và không phát sinh tồn đọng kéo dài.';
       sheetTitle = 'Chi tiết giải pháp';
-      sheetContent = <div className="planSheet"><span className="sourceBadge">{data.dataMode === 'demo' ? 'DEMO' : 'Theo báo cáo'}</span><h3>{plan.title}</h3><p><b>Đơn vị:</b> {plan.owner}</p><p><b>Trạng thái:</b> {plan.status}</p>{plan.note && <p>{plan.note}</p>}</div>;
+      sheetContent = (
+        <div className="planSheet planSheetDetailed">
+          <span className="sourceBadge">{data.dataMode === 'demo' ? 'DEMO' : 'Theo báo cáo'}</span>
+          <h3>{plan.title}</h3>
+          <div className="planMetaGrid">
+            <div><small>Đơn vị phụ trách</small><b>{plan.owner}</b></div>
+            <div><small>Trạng thái</small><b>{plan.status}</b></div>
+            <div><small>Mức ưu tiên</small><b>{plan.priority ?? 'Theo dõi'}</b></div>
+            <div><small>Thời hạn</small><b>{plan.deadline ?? nextPeriodLabel(data.period)}</b></div>
+          </div>
+          <section><b>Mục tiêu</b><p>{objective}</p></section>
+          <section><b>Nội dung thực hiện</b><ol>{actions.map((text) => <li key={text}>{text}</li>)}</ol></section>
+          <section><b>Kết quả mong đợi</b><p>{expectedResult}</p></section>
+          {plan.measure && <section><b>Tiêu chí theo dõi</b><p>{plan.measure}</p></section>}
+          {plan.note && <section><b>Ghi chú</b><p>{plan.note}</p></section>}
+        </div>
+      );
+    }
+  } else if (sheet?.kind === 'kpi-plan') {
+    const field = data.fields.find((x) => x.id === sheet.domainId);
+    const item = field?.items.find((x) => x.id === sheet.kpiId);
+    const history = data.history?.[sheet.kpiId];
+    const point = historyPoint(data, sheet.kpiId);
+    if (field && item) {
+      const p = getPresentation(item, data);
+      const actual = numericValue(point?.actual);
+      const planMonth = numericValue(point?.planMonth);
+      const ytd = numericValue(point?.ytd);
+      const planYtd = numericValue(point?.planYtd);
+      const annual = history?.annualPlans?.[data.period.slice(0,4)];
+      const ratio = actual !== undefined && planMonth !== undefined && planMonth !== 0 ? actual / planMonth * 100 : undefined;
+      const good = ratio === undefined ? undefined : history?.direction === 'lower' ? ratio <= 100 : ratio >= 100;
+      const related = data.plans.filter((plan) => (officialPlanByDomain[field.id] ?? []).includes(plan.id));
+      sheetTitle = 'Chi tiết kế hoạch chỉ tiêu';
+      sheetContent = <div className="kpiPlanSheet"><div className="planTargetHero"><small>{item.label}</small><b>{p.plan ?? item.plan ?? 'Chưa có kế hoạch chuẩn hóa'}</b><span>{good === undefined ? 'Đang bổ sung dữ liệu kế hoạch' : good ? '✓ Đang đạt/đúng ngưỡng' : '⚠ Cần bám sát kế hoạch'}</span></div><div className="planMetricGrid"><div><small>TH tháng</small><b>{history ? metricFormat(history,actual) : item.value}</b></div><div><small>KH tháng</small><b>{history ? metricFormat(history,planMonth) : '—'}</b></div><div><small>Lũy kế TH</small><b>{history ? metricFormat(history,ytd) : '—'}</b></div><div><small>KH lũy kế</small><b>{history ? metricFormat(history,planYtd) : '—'}</b></div><div><small>KH năm</small><b>{history ? metricFormat(history,annual) : '—'}</b></div><div><small>TH/KH tháng</small><b>{ratio === undefined ? '—' : `${ratio.toLocaleString('vi-VN',{maximumFractionDigits:1})}%`}</b></div></div><div className="planExplanation"><b>Diễn giải</b><p>Kế hoạch chỉ tiêu là mốc số liệu để so với thực hiện. Biểu đồ sử dụng cùng đơn vị và cùng trục để tránh hiểu sai mức độ hoàn thành.</p></div>{related.length>0&&<div className="planRelated"><b>Hành động liên quan</b>{related.slice(0,3).map((plan)=><p key={plan.id}><span>→</span><em>{plan.title}</em><small>{plan.owner}</small></p>)}</div>}</div>;
     }
   } else if (sheet?.kind === 'advice') {
     const field = data.fields.find((x) => x.id === sheet.domainId);
