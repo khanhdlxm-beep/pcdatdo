@@ -328,32 +328,6 @@ function getPresentation(item: KpiCard, data?: DashboardBootstrap): KpiPresentat
   };
 }
 
-function domainStatus(field: FieldGroup) {
-  return {
-    pass: field.items.filter((x) => x.tone === 'good').length,
-    watch: field.items.filter((x) => x.tone === 'warn').length,
-    fail: field.items.filter((x) => x.tone === 'bad').length,
-    total: field.items.length,
-  };
-}
-
-function domainAliases(fieldId: string) {
-  const aliases: Record<string, string[]> = {
-    'kinh-doanh': ['Kinh doanh'],
-    dvkh: ['DVKH'],
-    'do-xa': ['Đo xa'],
-    'ky-thuat': ['Kỹ thuật'],
-    'dau-tu-tai-chinh': ['ĐTXD', 'SCL', 'Tài chính'],
-    'nhan-su': ['Nhân sự'],
-  };
-  return aliases[fieldId] ?? [];
-}
-
-function domainAlerts(data: DashboardBootstrap, fieldId: string) {
-  const names = domainAliases(fieldId);
-  return data.alerts.filter((a) => names.some((name) => a.domain.includes(name)));
-}
-
 function miniProgressWidth(ratio?: number) {
   if (ratio === undefined || Number.isNaN(ratio)) return 0;
   return Math.max(4, Math.min(ratio, 110));
@@ -437,165 +411,219 @@ function axisLabel(value: number) {
   return value.toLocaleString('vi-VN', { maximumFractionDigits: digits });
 }
 
-function HistoryChart({ data, kpiId, mode }: { data: DashboardBootstrap; kpiId: string; mode: 'actual' | 'ytd' | 'same' | 'forecast' }) {
+function performanceDelta(history: MetricHistory, actual?: number, plan?: number) {
+  if (actual === undefined || plan === undefined || plan === 0) return undefined;
+  const raw = (actual / plan - 1) * 100;
+  return history.direction === 'lower' ? -raw : raw;
+}
+
+function changeDelta(current?: number, base?: number) {
+  if (current === undefined || base === undefined || base === 0) return undefined;
+  return (current / base - 1) * 100;
+}
+
+function compactPercent(value?: number, signed = false) {
+  if (value === undefined || !Number.isFinite(value)) return '—';
+  const prefix = signed && value > 0 ? '+' : '';
+  return `${prefix}${value.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}%`;
+}
+
+function MonthDetailPanel({ history, index, year, actual, plan, sameDelta, label = 'Chi tiết tháng', close }: {
+  history: MetricHistory;
+  index: number;
+  year: string;
+  actual?: number;
+  plan?: number;
+  sameDelta?: number;
+  label?: string;
+  close?: () => void;
+}) {
+  const ratio = actual !== undefined && plan !== undefined && plan !== 0 ? actual / plan * 100 : undefined;
+  return <div className="chartMobileDetail" role="status" aria-live="polite">
+    <div className="chartMobileDetailHead"><div><b>{`T${index + 1}/${year}`}</b><span>{label}</span></div>{close && <button type="button" onClick={close} aria-label="Đóng chi tiết tháng">×</button>}</div>
+    <div className="chartMobileDetailGrid">
+      <div><small>TH</small><b>{metricFormat(history, actual)}</b></div>
+      <div><small>KH</small><b>{metricFormat(history, plan)}</b></div>
+      <div><small>TH/KH</small><b>{compactPercent(ratio)}</b></div>
+      <div><small>Cùng kỳ</small><b>{compactPercent(sameDelta, true)}</b></div>
+    </div>
+  </div>;
+}
+
+function ChartMiniInsight({ history, current, priorMonth, priorYear }: { history: MetricHistory; current?: MetricHistoryPoint; priorMonth?: MetricHistoryPoint; priorYear?: MetricHistoryPoint }) {
+  const actual = numericValue(current?.actual);
+  const plan = numericValue(current?.planMonth);
+  const planGap = performanceDelta(history, actual, plan);
+  const mom = changeDelta(actual, numericValue(priorMonth?.actual));
+  const yoy = changeDelta(actual, numericValue(priorYear?.actual));
+  const planClass = planGap === undefined ? 'neutral' : planGap >= 0 ? 'good' : 'risk';
+  const changeClass = (value?: number) => value === undefined ? 'neutral' : value >= 0 ? 'good' : 'risk';
+  return <div className="chartMiniInsight" aria-label="Tóm tắt biến động">
+    <span className={planClass}>{planGap === undefined ? 'KH: —' : `${planGap >= 0 ? '✓' : '⚠'} ${Math.abs(planGap).toLocaleString('vi-VN',{maximumFractionDigits:1})}% so KH`}</span>
+    <span className={changeClass(yoy)}>{yoy === undefined ? 'Cùng kỳ: —' : `${yoy >= 0 ? '↑' : '↓'} ${Math.abs(yoy).toLocaleString('vi-VN',{maximumFractionDigits:1})}% cùng kỳ`}</span>
+    <span className={changeClass(mom)}>{mom === undefined ? 'Tháng trước: —' : `${mom >= 0 ? '↑' : '↓'} ${Math.abs(mom).toLocaleString('vi-VN',{maximumFractionDigits:1})}% tháng trước`}</span>
+  </div>;
+}
+
+function HistoryChart({ data, kpiId, mode }: { data: DashboardBootstrap; kpiId: string; mode: 'ytd' | 'forecast' }) {
   const history = data.history?.[kpiId];
   if (!history) return <div className="lockedPanel"><span>⌁</span><b>Chưa có dữ liệu biểu đồ</b></div>;
   const year = data.period.slice(0, 4);
   const month = Number(data.period.slice(5));
   const historyPoints = Array.isArray(history.points) ? history.points : [];
-  const slots = Array.from({ length: 12 }, (_, index) => historyPoints.find((point) => point.period === `${year}-${String(index + 1).padStart(2, '0')}`));
-  const priorSlots = Array.from({ length: 12 }, (_, index) => historyPoints.find((point) => point.period === `${Number(year) - 1}-${String(index + 1).padStart(2, '0')}`));
-  const forecast = forecastFor(history, data.period);
-  const [selectedIndex, setSelectedIndex] = useState(Math.max(0, month - 1));
-  useEffect(() => setSelectedIndex(Math.max(0, month - 1)), [data.period, kpiId]);
+  const slots = useMemo(() => Array.from({ length: 12 }, (_, index) => historyPoints.find((point) => point.period === `${year}-${String(index + 1).padStart(2, '0')}`)), [historyPoints, year]);
+  const priorSlots = useMemo(() => Array.from({ length: 12 }, (_, index) => historyPoints.find((point) => point.period === `${Number(year) - 1}-${String(index + 1).padStart(2, '0')}`)), [historyPoints, year]);
+  const forecast = useMemo(() => forecastFor(history, data.period), [history, data.period]);
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  useEffect(() => { setSelectedIndex(null); setHoveredIndex(null); }, [data.period, kpiId, mode]);
+  const activeIndex = selectedIndex ?? hoveredIndex;
 
   const actualValues = slots.map((point, index) => index < month ? (numericValue(mode === 'ytd' ? point?.ytd : point?.actual) ?? NaN) : NaN);
   const planValues = slots.map((point) => numericValue(mode === 'ytd' ? point?.planYtd : point?.planMonth) ?? NaN);
-  const sameValues = priorSlots.map((point) => numericValue(point?.actual) ?? NaN);
   const forecastValues = slots.map((point, index) => {
+    if (mode !== 'forecast') return NaN;
     if (index < month - 1) return NaN;
     if (index === month - 1) return numericValue(point?.actual) ?? NaN;
     return forecast?.future[index - month] ?? NaN;
   });
-  const all = [...actualValues, ...planValues, ...(mode === 'same' ? sameValues : []), ...(mode === 'forecast' ? forecastValues : [])].filter(Number.isFinite) as number[];
+  const all = [...actualValues, ...planValues, ...forecastValues].filter(Number.isFinite) as number[];
   if (!all.length) return <div className="lockedPanel"><span>⌁</span><b>Chưa có dữ liệu biểu đồ</b><p>Hãy chọn kỳ có dữ liệu lịch sử.</p></div>;
 
-  const rawMax = Math.max(...all);
-  const rawMin = Math.min(...all);
+  const rawMax = Math.max(...all), rawMin = Math.min(...all);
   const padding = Math.max((rawMax - rawMin) * .14, Math.abs(rawMax) * .05, 1);
-  const max = rawMax + padding;
-  const min = Math.max(0, rawMin - padding);
-  const span = Math.max(max - min, 1);
+  const max = rawMax + padding, min = Math.max(0, rawMin - padding), span = Math.max(max - min, 1);
   const plotLeft = 50, plotRight = 374, plotTop = 24, plotBottom = 132;
   const x = (index: number) => plotLeft + index * ((plotRight - plotLeft) / 11);
   const y = (value: number) => plotBottom - ((value - min) / span) * (plotBottom - plotTop);
-  const actualPath = smoothChartPath(actualValues, x, y);
-  const planPath = smoothChartPath(planValues, x, y);
-  const samePath = smoothChartPath(sameValues, x, y);
-  const forecastPath = smoothChartPath(forecastValues, x, y);
+  const actualPath = smoothChartPath(actualValues, x, y), planPath = smoothChartPath(planValues, x, y), forecastPath = smoothChartPath(forecastValues, x, y);
   const gridValues = [min, min + span / 2, max];
-
-  const selectedPoint = slots[selectedIndex];
-  const selectedPrior = priorSlots[selectedIndex];
+  const detailIndex = activeIndex;
+  const selectedPoint = detailIndex === null ? undefined : slots[detailIndex];
+  const selectedPrior = detailIndex === null ? undefined : priorSlots[detailIndex];
   const selectedActual = numericValue(mode === 'ytd' ? selectedPoint?.ytd : selectedPoint?.actual);
   const selectedPlan = numericValue(mode === 'ytd' ? selectedPoint?.planYtd : selectedPoint?.planMonth);
   const selectedPriorActual = numericValue(selectedPrior?.actual);
   const ratio = selectedActual !== undefined && selectedPlan !== undefined && selectedPlan !== 0 ? selectedActual / selectedPlan * 100 : undefined;
-  const sameDelta = selectedActual !== undefined && selectedPriorActual !== undefined && selectedPriorActual !== 0 ? (selectedActual / selectedPriorActual - 1) * 100 : undefined;
-  const selectedX = x(selectedIndex);
-  const selectedY = selectedActual === undefined ? plotBottom : y(selectedActual);
-  const choose = (index: number) => setSelectedIndex(index);
+  const sameDelta = changeDelta(selectedActual, selectedPriorActual);
+  const hasDetail = detailIndex !== null && (selectedActual !== undefined || selectedPlan !== undefined || selectedPriorActual !== undefined);
+  const detailValue = selectedActual ?? selectedPlan;
+  const detailX = detailIndex === null ? x(Math.max(0, month - 1)) : x(detailIndex);
+  const detailY = detailValue === undefined ? plotBottom : y(detailValue);
+  const pin = (index: number) => setSelectedIndex((current) => current === index ? null : index);
+  return <div className="historyChartWrap interactiveChartWrap" onMouseLeave={() => setHoveredIndex(null)}>
+    <div className="chartUnitLabel">Đơn vị: <b>{history.unit || 'Giá trị'}</b></div>
+    <svg className="historyChart" viewBox="0 0 390 158" role="img" aria-label={`Biểu đồ ${mode === 'ytd' ? 'lũy kế' : 'dự báo'} ${kpiId}`}>
+      <rect x={plotLeft} y={plotTop} width={plotRight - plotLeft} height={plotBottom - plotTop} className="chartPlotDismiss" onPointerDown={() => setSelectedIndex(null)} />
+      {gridValues.map((value, index) => <g key={`${value}-${index}`}><line x1={plotLeft} y1={y(value)} x2={plotRight} y2={y(value)} className={`chartGrid chartGrid${index}`} /><text x={plotLeft - 7} y={y(value) + 3.5} textAnchor="end" className="chartAxisLabel">{axisLabel(value)}</text></g>)}
+      <path d={planPath} className="chartPlan"/><path d={actualPath} className="chartActual"/>{mode === 'forecast' && forecast && <path d={forecastPath} className="chartForecast"/>}
+      {slots.map((point,index)=>{const value=numericValue(mode === 'ytd' ? point?.ytd : point?.actual) ?? numericValue(mode === 'ytd' ? point?.planYtd : point?.planMonth);if(value===undefined)return null;return <circle key={index} cx={x(index)} cy={y(value)} r="14" className="chartTouchPoint" onPointerDown={(event)=>{event.stopPropagation();pin(index)}} onMouseEnter={()=>{if(selectedIndex===null)setHoveredIndex(index)}}/>})}
+      {hasDetail && detailValue !== undefined && <g className="chartSelectedAnchor"><line x1={detailX} y1={detailY} x2={detailX} y2={plotBottom} className="chartCurrentGuide"/><circle cx={detailX} cy={detailY} r="5" className="chartAnchor"/></g>}
+      {Array.from({length:12},(_,index)=><text key={index} x={x(index)} y="151" textAnchor="middle" className={index===activeIndex?'chartLabel current':index===month-1?'chartLabel currentPeriod':'chartLabel'} onPointerDown={(event)=>{event.stopPropagation();if(slots[index])pin(index)}} onMouseEnter={()=>{if(slots[index]&&selectedIndex===null)setHoveredIndex(index)}}>{`T${index+1}`}</text>)}
+    </svg>
+    {hasDetail && detailIndex !== null && <div className="chartFloatingPopup"><div><b>{`T${detailIndex+1}/${year}`}</b><span>{mode==='ytd'?'Lũy kế':'Dự báo'}</span></div><dl><div><dt>TH</dt><dd>{metricFormat(history,selectedActual)}</dd></div><div><dt>KH</dt><dd>{metricFormat(history,selectedPlan)}</dd></div><div><dt>TH/KH</dt><dd>{compactPercent(ratio)}</dd></div><div><dt>Cùng kỳ</dt><dd>{compactPercent(sameDelta,true)}</dd></div></dl></div>}
+    {selectedIndex !== null && hasDetail && <MonthDetailPanel history={history} index={selectedIndex} year={year} actual={selectedActual} plan={selectedPlan} sameDelta={sameDelta} label={mode==='ytd'?'Lũy kế':'Dự báo'} close={()=>setSelectedIndex(null)}/>}
+    <div className="chartLegend"><span className="actual">TH</span><span className="plan">KH</span>{mode==='forecast'&&<span className="forecast">Dự báo</span>}<small>ⓘ Chạm hoặc kéo theo tháng</small></div>
+  </div>;
+}
 
-  return (
-    <div className="historyChartWrap interactiveChartWrap">
-      <div className="chartUnitLabel">Đơn vị: <b>{history.unit || 'Giá trị'}</b></div>
-      <svg className="historyChart" viewBox="0 0 390 158" role="img" aria-label={`Biểu đồ tương tác ${kpiId}`}>
-        {gridValues.map((value, index) => <g key={`${value}-${index}`}><line x1={plotLeft} y1={y(value)} x2={plotRight} y2={y(value)} className={`chartGrid chartGrid${index}`} /><text x={plotLeft - 7} y={y(value) + 3.5} textAnchor="end" className="chartAxisLabel">{axisLabel(value)}</text></g>)}
-        <path d={planPath} className="chartPlan" />
-        {mode === 'same' && <path d={samePath} className="chartSame" />}
-        <path d={actualPath} className="chartActual" />
-        {mode === 'forecast' && forecast && <path d={forecastPath} className="chartForecast" />}
-        {slots.map((point, index) => {
-          const value = numericValue(mode === 'ytd' ? point?.ytd : point?.actual);
-          if (value === undefined || index >= month) return null;
-          return <circle key={`hit-${index}`} cx={x(index)} cy={y(value)} r="12" className="chartTouchPoint" onPointerDown={() => choose(index)} onMouseEnter={() => choose(index)} role="button" aria-label={`Xem dữ liệu tháng ${index + 1}`} />;
-        })}
-        {selectedActual !== undefined && selectedIndex < month && <g className="chartSelectedAnchor"><line x1={selectedX} y1={selectedY} x2={selectedX} y2={plotBottom} className="chartCurrentGuide" /><circle cx={selectedX} cy={selectedY} r="5" className="chartAnchor" /></g>}
-        {Array.from({ length: 12 }, (_, index) => <text key={index} x={x(index)} y="151" textAnchor="middle" className={index === selectedIndex ? 'chartLabel current' : 'chartLabel'} onPointerDown={() => choose(index)}>{`T${index + 1}`}</text>)}
-      </svg>
-      {selectedActual !== undefined && <div className="chartFloatingPopup" role="status">
-        <div><b>{`T${selectedIndex + 1}/${year}`}</b><span>{mode === 'ytd' ? 'Lũy kế' : 'Chi tiết điểm dữ liệu'}</span></div>
-        <dl>
-          <div><dt>TH</dt><dd>{metricFormat(history, selectedActual)}</dd></div>
-          <div><dt>KH</dt><dd>{metricFormat(history, selectedPlan)}</dd></div>
-          <div><dt>TH/KH</dt><dd>{ratio === undefined ? '—' : `${ratio.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}%`}</dd></div>
-          <div><dt>Cùng kỳ</dt><dd>{sameDelta === undefined ? '—' : `${sameDelta >= 0 ? '+' : ''}${sameDelta.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}%`}</dd></div>
-        </dl>
-      </div>}
-      <div className="chartLegend"><span className="actual">TH</span><span className="plan">KH</span>{mode === 'same' && <span className="same">Cùng kỳ {Number(year) - 1}</span>}{mode === 'forecast' && <span className="forecast">Dự báo</span>}<small>Chạm điểm hoặc T1–T12 để xem chi tiết</small></div>
-    </div>
-  );
+function MonthlyActualTargetChart({ data, kpiId }: { data: DashboardBootstrap; kpiId: string }) {
+  const history = data.history?.[kpiId];
+  if (!history) return <div className="lockedPanel"><span>▥</span><b>Chưa có dữ liệu biểu đồ</b></div>;
+  const year = data.period.slice(0,4), month = Number(data.period.slice(5));
+  const source = Array.isArray(history.points) ? history.points : [];
+  const points = useMemo(()=>Array.from({length:12},(_,i)=>source.find((p)=>p.period===`${year}-${String(i+1).padStart(2,'0')}`)),[source,year]);
+  const prior = useMemo(()=>Array.from({length:12},(_,i)=>source.find((p)=>p.period===`${Number(year)-1}-${String(i+1).padStart(2,'0')}`)),[source,year]);
+  const values = points.flatMap((p)=>[numericValue(p?.actual),numericValue(p?.planMonth)]).filter((v):v is number=>v!==undefined);
+  if(!values.length) return <div className="lockedPanel"><span>▥</span><b>Chưa có dữ liệu biểu đồ</b></div>;
+  const max=Math.max(...values,1)*1.12, min=Math.max(0,Math.min(...values)*.88), span=Math.max(max-min,1);
+  const plotLeft=50,plotRight=374,plotTop=24,plotBottom=132;
+  const x=(i:number)=>plotLeft+i*((plotRight-plotLeft)/11), y=(v:number)=>plotBottom-((v-min)/span)*(plotBottom-plotTop);
+  const [selected,setSelected]=useState<number|null>(null), [hovered,setHovered]=useState<number|null>(null);
+  useEffect(()=>{setSelected(null);setHovered(null)},[data.period,kpiId]);
+  const active=selected??hovered;
+  const choose=(index:number,sticky=false)=>{const valid=Math.max(0,Math.min(11,index));if(sticky)setSelected(valid);else if(selected===null)setHovered(valid)};
+  const pick=(event: { clientX:number; currentTarget: SVGRectElement })=>{const rect=event.currentTarget.getBoundingClientRect();const ratio=(event.clientX-rect.left)/Math.max(rect.width,1);return Math.max(0,Math.min(11,Math.round(ratio*11)))};
+  const chosen=active===null?undefined:points[active], actual=numericValue(chosen?.actual), plan=numericValue(chosen?.planMonth), priorActual=numericValue(active===null?undefined:prior[active]?.actual);
+  const ratio=actual!==undefined&&plan!==undefined&&plan!==0?actual/plan*100:undefined, sameDelta=changeDelta(actual,priorActual), hasDetail=active!==null&&(actual!==undefined||plan!==undefined);
+  const currentIndex=Math.max(0,month-1), current=points[currentIndex], previous=currentIndex>0?points[currentIndex-1]:undefined, previousYear=prior[currentIndex];
+  const grid=[min,min+span/2,max], barWidth=15;
+  return <div className="historyChartWrap interactiveChartWrap adaptiveMonthlyChart" onMouseLeave={()=>setHovered(null)}>
+    <div className="chartUnitLabel">Đơn vị: <b>{history.unit||'Giá trị'}</b></div>
+    <svg className="historyChart" viewBox="0 0 390 158" role="img" aria-label={`Biểu đồ cột thực hiện và mốc kế hoạch ${kpiId}`}>
+      {grid.map((v,i)=><g key={i}><line x1={plotLeft} x2={plotRight} y1={y(v)} y2={y(v)} className={`chartGrid chartGrid${i}`}/><text x={plotLeft-7} y={y(v)+3.5} textAnchor="end" className="chartAxisLabel">{axisLabel(v)}</text></g>)}
+      {points.map((point,i)=>{const av=numericValue(point?.actual),pv=numericValue(point?.planMonth),cx=x(i),showActual=i<month&&av!==undefined;return <g key={i} className={`monthlyBarGroup ${active===i?'active':''}`}>
+        {showActual&&<rect x={cx-barWidth/2} y={y(av!)} width={barWidth} height={Math.max(1,plotBottom-y(av!))} rx="4" className="monthlyActualBar"/>}
+        {pv!==undefined&&<line x1={cx-10} x2={cx+10} y1={y(pv)} y2={y(pv)} className="monthlyPlanTarget"/>}
+        {i===currentIndex&&showActual&&<circle cx={cx} cy={y(av!)} r="3.5" className="currentBarAnchor"/>}
+        <text x={cx} y="151" textAnchor="middle" className={active===i?'chartLabel current':i===currentIndex?'chartLabel currentPeriod':'chartLabel'}>{`T${i+1}`}</text>
+      </g>})}
+      <rect x={plotLeft-12} y={plotTop} width={plotRight-plotLeft+24} height={plotBottom-plotTop+24} className="chartScrubberLayer"
+        onPointerDown={(event)=>{event.currentTarget.setPointerCapture?.(event.pointerId);choose(pick(event),true)}}
+        onPointerMove={(event)=>{if(event.pointerType==='mouse'&&event.buttons===0)choose(pick(event),false);else if(event.buttons!==0||event.pointerType==='touch')choose(pick(event),true)}}
+      />
+      {active!==null&&<line x1={x(active)} x2={x(active)} y1={plotTop} y2={plotBottom} className="chartCurrentGuide"/>}
+    </svg>
+    {hasDetail&&active!==null&&<div className="chartFloatingPopup"><div><b>{`T${active+1}/${year}`}</b><span>TH tháng & mốc KH</span></div><dl><div><dt>TH</dt><dd>{metricFormat(history,actual)}</dd></div><div><dt>KH</dt><dd>{metricFormat(history,plan)}</dd></div><div><dt>TH/KH</dt><dd>{compactPercent(ratio)}</dd></div><div><dt>Cùng kỳ</dt><dd>{compactPercent(sameDelta,true)}</dd></div></dl></div>}
+    {selected!==null&&hasDetail&&<MonthDetailPanel history={history} index={selected} year={year} actual={actual} plan={plan} sameDelta={sameDelta} close={()=>setSelected(null)}/>}
+    <ChartMiniInsight history={history} current={current} priorMonth={previous} priorYear={previousYear}/>
+    <div className="chartLegend"><span className="actual bar">TH</span><span className="plan target">KH</span><small>ⓘ Chạm/kéo T1–T12 để xem</small></div>
+  </div>;
+}
+
+function SamePeriodColumnsChart({ data, kpiId }: { data: DashboardBootstrap; kpiId: string }) {
+  const history=data.history?.[kpiId];
+  if(!history) return <div className="lockedPanel"><span>↔</span><b>Chưa có dữ liệu cùng kỳ</b></div>;
+  const year=data.period.slice(0,4), month=Number(data.period.slice(5)), source=Array.isArray(history.points)?history.points:[];
+  const current=useMemo(()=>Array.from({length:12},(_,i)=>source.find((p)=>p.period===`${year}-${String(i+1).padStart(2,'0')}`)),[source,year]);
+  const prior=useMemo(()=>Array.from({length:12},(_,i)=>source.find((p)=>p.period===`${Number(year)-1}-${String(i+1).padStart(2,'0')}`)),[source,year]);
+  const values=[...current,...prior].flatMap((p)=>numericValue(p?.actual)===undefined?[]:[numericValue(p?.actual)!]);
+  if(!values.length)return <div className="lockedPanel"><span>↔</span><b>Chưa có dữ liệu cùng kỳ</b></div>;
+  const max=Math.max(...values,1)*1.12, plotLeft=50,plotRight=374,plotTop=24,plotBottom=132, x=(i:number)=>plotLeft+i*((plotRight-plotLeft)/11),y=(v:number)=>plotBottom-(v/max)*(plotBottom-plotTop);
+  const [selected,setSelected]=useState<number|null>(null),[hovered,setHovered]=useState<number|null>(null);useEffect(()=>{setSelected(null);setHovered(null)},[data.period,kpiId]);const active=selected??hovered;
+  const pick=(event:{clientX:number;currentTarget:SVGRectElement})=>{const rect=event.currentTarget.getBoundingClientRect();return Math.max(0,Math.min(11,Math.round(((event.clientX-rect.left)/Math.max(rect.width,1))*11)))};
+  const ca=numericValue(active===null?undefined:current[active]?.actual),pa=numericValue(active===null?undefined:prior[active]?.actual),delta=changeDelta(ca,pa),hasDetail=active!==null&&(ca!==undefined||pa!==undefined);
+  return <div className="historyChartWrap interactiveChartWrap samePeriodColumns" onMouseLeave={()=>setHovered(null)}>
+    <div className="chartUnitLabel">Đơn vị: <b>{history.unit||'Giá trị'}</b></div><svg className="historyChart" viewBox="0 0 390 158" role="img" aria-label="Biểu đồ cột cùng kỳ">
+      {[0,max/2,max].map((v,i)=><g key={i}><line x1={plotLeft} x2={plotRight} y1={y(v)} y2={y(v)} className={`chartGrid chartGrid${i}`}/><text x={plotLeft-7} y={y(v)+3.5} textAnchor="end" className="chartAxisLabel">{axisLabel(v)}</text></g>)}
+      {current.map((point,i)=>{const cv=numericValue(point?.actual),pv=numericValue(prior[i]?.actual),cx=x(i);return <g key={i}>{pv!==undefined&&<rect x={cx-11} y={y(pv)} width="9" height={plotBottom-y(pv)} rx="3" className="samePriorBar"/>}{i<month&&cv!==undefined&&<rect x={cx+2} y={y(cv)} width="9" height={plotBottom-y(cv)} rx="3" className="sameCurrentBar"/>}<text x={cx} y="151" textAnchor="middle" className={active===i?'chartLabel current':i===month-1?'chartLabel currentPeriod':'chartLabel'}>{`T${i+1}`}</text></g>})}
+      <rect x={plotLeft-12} y={plotTop} width={plotRight-plotLeft+24} height={plotBottom-plotTop+24} className="chartScrubberLayer" onPointerDown={(event)=>{event.currentTarget.setPointerCapture?.(event.pointerId);setSelected(pick(event))}} onPointerMove={(event)=>{const idx=pick(event);if(event.pointerType==='mouse'&&event.buttons===0&&selected===null)setHovered(idx);else if(event.buttons!==0||event.pointerType==='touch')setSelected(idx)}}/>
+      {active!==null&&<line x1={x(active)} x2={x(active)} y1={plotTop} y2={plotBottom} className="chartCurrentGuide"/>}
+    </svg>
+    {hasDetail&&active!==null&&<div className="chartFloatingPopup"><div><b>{`T${active+1}`}</b><span>So cùng kỳ</span></div><dl><div><dt>{year}</dt><dd>{metricFormat(history,ca)}</dd></div><div><dt>{Number(year)-1}</dt><dd>{metricFormat(history,pa)}</dd></div><div><dt>Chênh lệch</dt><dd>{compactPercent(delta,true)}</dd></div></dl></div>}
+    {selected!==null&&hasDetail&&<div className="chartMobileDetail"><div className="chartMobileDetailHead"><div><b>{`T${selected+1}`}</b><span>So sánh cùng kỳ</span></div><button onClick={()=>setSelected(null)} aria-label="Đóng">×</button></div><div className="chartMobileDetailGrid"><div><small>{year}</small><b>{metricFormat(history,ca)}</b></div><div><small>{Number(year)-1}</small><b>{metricFormat(history,pa)}</b></div><div><small>Chênh lệch</small><b>{compactPercent(delta,true)}</b></div></div></div>}
+    <div className="chartLegend"><span className="currentYear">{year}</span><span className="priorYear">{Number(year)-1}</span><small>ⓘ Chạm/kéo tháng để đối chiếu</small></div>
+  </div>;
 }
 
 function chartKindFor(kpiId:string, history:MetricHistory) {
   if (kpiId === 'KT_SC') return 'pareto';
-  if (['DTXD','SCL','GANMOI','HDMBD','DT_GIO'].includes(kpiId)) return 'columns';
-  if (['CRM','DX_KB','DX_KN','DX_HD','ATTT','NSLD_KH'].includes(kpiId)) return 'gauge';
-  if (history.direction === 'lower') return 'threshold';
-  return 'trend';
+  if (history.aggregate === 'snapshot' && ['CRM','DX_KB','DX_KN','DX_HD','ATTT','NSLD_KH'].includes(kpiId)) return 'gauge';
+  if (history.aggregate === 'snapshot' && history.direction === 'lower') return 'threshold';
+  return 'monthly';
 }
 
 function GaugeChart({ history, point }: { history:MetricHistory; point:MetricHistoryPoint }) {
-  const actual = numericValue(point.actual);
-  const plan = numericValue(point.planMonth);
+  const actual = numericValue(point.actual), plan = numericValue(point.planMonth);
   const [open,setOpen]=useState(false);
   if (actual === undefined) return <div className="lockedPanel"><span>◌</span><b>Chưa có dữ liệu thực hiện</b></div>;
   const rawRatio = plan && plan !== 0 ? actual / plan * 100 : 100;
   const score = history.direction === 'lower' && plan !== undefined ? Math.min(100, plan / Math.max(actual,.00001) * 100) : Math.min(100, rawRatio);
   const radius = 42, circumference = 2*Math.PI*radius;
-  return <div className="adaptiveGauge interactiveSnapshot" onClick={()=>setOpen((v)=>!v)} role="button" tabIndex={0}>
-    <svg viewBox="0 0 120 120" role="img" aria-label="Biểu đồ tỷ lệ hoàn thành"><circle cx="60" cy="60" r={radius} className="gaugeTrack"/><circle cx="60" cy="60" r={radius} className="gaugeValue" strokeDasharray={`${circumference*score/100} ${circumference}`}/><text x="60" y="56" textAnchor="middle" className="gaugeMain">{rawRatio.toLocaleString('vi-VN',{maximumFractionDigits:1})}%</text><text x="60" y="72" textAnchor="middle" className="gaugeSub">TH / KH tháng</text></svg>
-    <div className="gaugeFacts"><span><small>Thực hiện</small><b>{metricFormat(history,actual)}</b></span><span><small>Kế hoạch</small><b>{metricFormat(history,plan)}</b></span></div>
-    {open && <div className="snapshotPopup"><b>Chi tiết chỉ tiêu</b><span>TH: {metricFormat(history,actual)}</span><span>KH: {metricFormat(history,plan)}</span><span>Tỷ lệ: {rawRatio.toLocaleString('vi-VN',{maximumFractionDigits:1})}%</span></div>}
-  </div>;
+  return <div className="adaptiveGauge interactiveSnapshot" onClick={()=>setOpen((v)=>!v)} role="button" tabIndex={0}><svg viewBox="0 0 120 120" role="img" aria-label="Biểu đồ tỷ lệ hoàn thành"><circle cx="60" cy="60" r={radius} className="gaugeTrack"/><circle cx="60" cy="60" r={radius} className="gaugeValue" strokeDasharray={`${circumference*score/100} ${circumference}`}/><text x="60" y="56" textAnchor="middle" className="gaugeMain">{rawRatio.toLocaleString('vi-VN',{maximumFractionDigits:1})}%</text><text x="60" y="72" textAnchor="middle" className="gaugeSub">TH / KH tháng</text></svg><div className="gaugeFacts"><span><small>Thực hiện</small><b>{metricFormat(history,actual)}</b></span><span><small>Kế hoạch</small><b>{metricFormat(history,plan)}</b></span></div>{open&&<div className="snapshotPopup"><b>Chi tiết chỉ tiêu</b><span>TH: {metricFormat(history,actual)}</span><span>KH: {metricFormat(history,plan)}</span><span>Tỷ lệ: {rawRatio.toLocaleString('vi-VN',{maximumFractionDigits:1})}%</span></div>}</div>;
 }
 
 function ThresholdChart({ history, point }: { history:MetricHistory; point:MetricHistoryPoint }) {
-  const actual = numericValue(point.actual), plan = numericValue(point.planMonth);
-  const [open,setOpen]=useState(false);
-  if (actual === undefined) return <div className="lockedPanel"><span>—</span><b>Chưa có dữ liệu thực hiện</b></div>;
-  const max = Math.max(actual,plan ?? 0,1)*1.25, actualWidth=Math.min(100,actual/max*100), planLeft=plan===undefined?undefined:Math.min(100,plan/max*100);
-  const good = plan === undefined ? true : history.direction === 'lower' ? actual <= plan : actual >= plan;
-  return <div className="thresholdChart interactiveSnapshot" onClick={()=>setOpen((v)=>!v)} role="button" tabIndex={0}>
-    <div className="thresholdLabels"><span><small>TH</small><b>{metricFormat(history,actual)}</b></span><span><small>Ngưỡng/KH</small><b>{metricFormat(history,plan)}</b></span></div>
-    <div className="thresholdTrack"><span className={good?'good':'risk'} style={{width:`${actualWidth}%`}}/>{planLeft!==undefined&&<i style={{left:`${planLeft}%`}} title="Ngưỡng kế hoạch"/>}</div>
-    <small>{history.direction==='lower'?'Vạch đứng là mức tối đa/khuyến nghị':'Vạch đứng là kế hoạch cần đạt'} · Chạm để xem chi tiết</small>
-    {open && <div className="snapshotPopup"><b>{good?'Đang trong ngưỡng':'Cần chú ý'}</b><span>TH: {metricFormat(history,actual)}</span><span>KH/ngưỡng: {metricFormat(history,plan)}</span></div>}
-  </div>;
-}
-
-function MonthlyColumnsChart({ data, kpiId }: { data:DashboardBootstrap; kpiId:string }) {
-  const history=data.history?.[kpiId];
-  if(!history) return null;
-  const year=data.period.slice(0,4), month=Number(data.period.slice(5));
-  const source=Array.isArray(history.points)?history.points:[];
-  const points=Array.from({length:12},(_,i)=>source.find((x)=>x.period===`${year}-${String(i+1).padStart(2,'0')}`));
-  const values=points.flatMap((x)=>[numericValue(x?.actual),numericValue(x?.planMonth)]).filter((v):v is number=>v!==undefined);
-  if(!values.length) return <div className="lockedPanel"><span>▥</span><b>Chưa có dữ liệu biểu đồ</b></div>;
-  const max=Math.max(...values,1)*1.12, plotLeft=50,plotRight=374,plotTop=24,plotBottom=132;
-  const x=(i:number)=>plotLeft+i*((plotRight-plotLeft)/11), y=(v:number)=>plotBottom-(v/max)*(plotBottom-plotTop);
-  const [selected,setSelected]=useState(Math.max(0,month-1));
-  useEffect(()=>setSelected(Math.max(0,month-1)),[data.period,kpiId]);
-  const chosen=points[selected], actual=numericValue(chosen?.actual), plan=numericValue(chosen?.planMonth), ratio=actual!==undefined&&plan?actual/plan*100:undefined;
-  return <div className="historyChartWrap interactiveChartWrap">
-    <div className="chartUnitLabel">Đơn vị: <b>{history.unit||'Giá trị'}</b></div>
-    <svg className="historyChart" viewBox="0 0 390 158" role="img" aria-label="Biểu đồ cột tương tác">
-      {[0,max/2,max].map((v,i)=><g key={i}><line x1={plotLeft} x2={plotRight} y1={y(v)} y2={y(v)} className={`chartGrid chartGrid${i}`}/><text x={plotLeft-7} y={y(v)+3.5} textAnchor="end" className="chartAxisLabel">{axisLabel(v)}</text></g>)}
-      {points.map((point,i)=>{const av=numericValue(point?.actual),pv=numericValue(point?.planMonth),cx=x(i);return <g key={i} onPointerDown={()=>setSelected(i)} className="columnSvgGroup"><rect x={cx-9} y={pv===undefined?plotBottom:y(pv)} width="7" height={pv===undefined?0:plotBottom-y(pv)} rx="2" className="columnPlanSvg"/><rect x={cx+2} y={i<month&&av!==undefined?y(av):plotBottom} width="7" height={i<month&&av!==undefined?plotBottom-y(av):0} rx="2" className="columnActualSvg"/><rect x={cx-13} y={plotTop} width="26" height={plotBottom-plotTop+10} className="chartTouchBar"/><text x={cx} y="151" textAnchor="middle" className={selected===i?'chartLabel current':'chartLabel'}>{`T${i+1}`}</text></g>})}
-    </svg>
-    {actual!==undefined&&<div className="chartFloatingPopup"><div><b>{`T${selected+1}/${year}`}</b><span>Chi tiết cột</span></div><dl><div><dt>TH</dt><dd>{metricFormat(history,actual)}</dd></div><div><dt>KH</dt><dd>{metricFormat(history,plan)}</dd></div><div><dt>TH/KH</dt><dd>{ratio===undefined?'—':`${ratio.toLocaleString('vi-VN',{maximumFractionDigits:1})}%`}</dd></div></dl></div>}
-    <div className="chartLegend"><span className="actual">TH</span><span className="plan">KH</span><small>Chạm cột/tháng để xem chi tiết</small></div>
-  </div>;
+  const actual=numericValue(point.actual),plan=numericValue(point.planMonth);const[open,setOpen]=useState(false);if(actual===undefined)return <div className="lockedPanel"><span>—</span><b>Chưa có dữ liệu thực hiện</b></div>;const max=Math.max(actual,plan??0,1)*1.25,actualWidth=Math.min(100,actual/max*100),planLeft=plan===undefined?undefined:Math.min(100,plan/max*100),good=plan===undefined?true:history.direction==='lower'?actual<=plan:actual>=plan;
+  return <div className="thresholdChart interactiveSnapshot" onClick={()=>setOpen((v)=>!v)} role="button" tabIndex={0}><div className="thresholdLabels"><span><small>TH</small><b>{metricFormat(history,actual)}</b></span><span><small>Ngưỡng/KH</small><b>{metricFormat(history,plan)}</b></span></div><div className="thresholdTrack"><span className={good?'good':'risk'} style={{width:`${actualWidth}%`}}/>{planLeft!==undefined&&<i style={{left:`${planLeft}%`}}/>}</div><small>{history.direction==='lower'?'Vạch đứng là mức tối đa/khuyến nghị':'Vạch đứng là kế hoạch cần đạt'} · Chạm để xem chi tiết</small>{open&&<div className="snapshotPopup"><b>{good?'Đang trong ngưỡng':'Cần chú ý'}</b><span>TH: {metricFormat(history,actual)}</span><span>KH/ngưỡng: {metricFormat(history,plan)}</span></div>}</div>;
 }
 
 function ParetoIncidentChart({ data }: { data:DashboardBootstrap }) {
-  const causes=Array.isArray(data.incidentCauses)?data.incidentCauses:[];
-  const [selected,setSelected]=useState(0);
-  if(!causes.length) return <div className="lockedPanel"><span>≡</span><b>Chưa có cơ cấu nguyên nhân sự cố</b></div>;
-  const max=Math.max(...causes.map((x)=>numericValue(x.monthShare)??0),1), picked=causes[Math.min(selected,causes.length-1)];
-  return <div className="paretoChart interactivePareto"><div className="paretoTitle">Cơ cấu nguyên nhân sự cố tháng <small>· chạm thanh để xem chi tiết</small></div>{causes.slice(0,5).map((cause,i)=><button className={`paretoRow ${selected===i?'active':''}`} key={cause.label} onClick={()=>setSelected(i)}><span>{cause.label}</span><div><i style={{width:`${(numericValue(cause.monthShare)??0)/max*100}%`}}/></div><b>{metricFormat({id:'incident',unit:'%',direction:'info',aggregate:'snapshot',decimals:1,annualPlans:{},points:[]},cause.monthShare)}</b></button>)}<div className="paretoPopup"><b>{picked.label}</b><span>Tháng: {picked.monthValue} vụ · {picked.monthShare}%</span><span>Lũy kế: {picked.ytdValue} vụ · {picked.ytdShare}%</span></div></div>;
+  const causes=Array.isArray(data.incidentCauses)?data.incidentCauses:[];const[selected,setSelected]=useState(0);if(!causes.length)return <div className="lockedPanel"><span>≡</span><b>Chưa có cơ cấu nguyên nhân sự cố</b></div>;const max=Math.max(...causes.map((x)=>numericValue(x.monthShare)??0),1),picked=causes[Math.min(selected,causes.length-1)];return <div className="paretoChart interactivePareto"><div className="paretoTitle">Cơ cấu nguyên nhân sự cố tháng <small>· chạm thanh để xem chi tiết</small></div>{causes.slice(0,5).map((cause,i)=><button className={`paretoRow ${selected===i?'active':''}`} key={cause.label} onClick={()=>setSelected(i)}><span>{cause.label}</span><div><i style={{width:`${(numericValue(cause.monthShare)??0)/max*100}%`}}/></div><b>{metricFormat({id:'incident',unit:'%',direction:'info',aggregate:'snapshot',decimals:1,annualPlans:{},points:[]},cause.monthShare)}</b></button>)}<div className="paretoPopup"><b>{picked.label}</b><span>Tháng: {picked.monthValue} vụ · {picked.monthShare}%</span><span>Lũy kế: {picked.ytdValue} vụ · {picked.ytdShare}%</span></div></div>;
 }
 
 function AdaptiveCurrentChart({ data, kpiId }: { data:DashboardBootstrap; kpiId:string }) {
-  const history=data.history?.[kpiId];
-  const point=historyPoint(data,kpiId);
-  if(!history||!point) return null;
-  const kind=chartKindFor(kpiId,history);
-  if(kind==='pareto') return <ParetoIncidentChart data={data}/>;
-  if(kind==='columns') return <MonthlyColumnsChart data={data} kpiId={kpiId}/>;
-  if(kind==='gauge') return <GaugeChart history={history} point={point}/>;
-  if(kind==='threshold') return <ThresholdChart history={history} point={point}/>;
-  return <HistoryChart data={data} kpiId={kpiId} mode="actual"/>;
+  const history=data.history?.[kpiId],point=historyPoint(data,kpiId);if(!history||!point)return null;const kind=chartKindFor(kpiId,history);if(kind==='pareto')return <ParetoIncidentChart data={data}/>;if(kind==='gauge')return <GaugeChart history={history} point={point}/>;if(kind==='threshold')return <ThresholdChart history={history} point={point}/>;return <MonthlyActualTargetChart data={data} kpiId={kpiId}/>;
 }
 
 function rangeMonths(selection:RangeSelection) {
@@ -652,7 +680,7 @@ function SamePeriodPanel({ data, kpiId }: { data: DashboardBootstrap; kpiId: str
         <span className={change >= 0 ? 'up' : 'down'}>{change >= 0 ? '▲' : '▼'} {Math.abs(change).toLocaleString('vi-VN',{maximumFractionDigits:1})}%</span>
         <div><small>{periodLabel(data.period)}</small><b>{metricFormat(history, current.actual)}</b></div>
       </div>
-      <HistoryChart data={data} kpiId={kpiId} mode="same" />
+      <SamePeriodColumnsChart data={data} kpiId={kpiId} />
     </>
   );
 }
@@ -895,20 +923,6 @@ function DomainDetail({ data, domainId, favoriteKpis, toggleKpiFavorite, back, o
       </section>
       <div className="domainDetailHint"><span>✓</span><p><b>Không lặp nội dung.</b> Cảnh báo xem tại tab Cảnh báo; kế hoạch hành động xem tại tab Kế hoạch.</p></div>
     </>
-  );
-}
-
-function DetailProgress({ item, presentation }: { item: KpiCard; presentation: KpiPresentation }) {
-  if (presentation.comparisonRatio === undefined) {
-    return <div className="detailNoRatio">{presentation.comparison ?? toneLabel(item.tone, item.status)}</div>;
-  }
-  return (
-    <div className="detailProgress">
-      <div className="detailProgressTrack">
-        <span className={statusToneClass(item.tone)} style={{ width: `${miniProgressWidth(presentation.comparisonRatio)}%` }} />
-      </div>
-      <b>{presentation.comparisonRatio.toLocaleString('vi-VN', { maximumFractionDigits: 2 })}%</b>
-    </div>
   );
 }
 
