@@ -244,16 +244,29 @@ function toneLabel(tone: Tone, explicit?: string) {
   return 'Thông tin';
 }
 
-function metricFormat(history: MetricHistory, value: number) {
-  const text = value.toLocaleString('vi-VN', {
-    minimumFractionDigits: history.decimals > 0 ? Math.min(history.decimals, 2) : 0,
-    maximumFractionDigits: history.decimals,
+function numericValue(value: unknown): number | undefined {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : undefined;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
+function metricFormat(history: MetricHistory, value: unknown, fallback = '—') {
+  const numeric = numericValue(value);
+  if (numeric === undefined) return fallback;
+  const decimals = Number.isFinite(history.decimals) ? Math.max(0, history.decimals) : 2;
+  const text = numeric.toLocaleString('vi-VN', {
+    minimumFractionDigits: decimals > 0 ? Math.min(decimals, 2) : 0,
+    maximumFractionDigits: decimals,
   });
   return history.unit ? `${text} ${history.unit}` : text;
 }
 
 function historyPoint(data: DashboardBootstrap, kpiId: string, period = data.period) {
-  return data.history?.[kpiId]?.points.find((point) => point.period === period);
+  const points = data.history?.[kpiId]?.points;
+  return Array.isArray(points) ? points.find((point) => point.period === period) : undefined;
 }
 
 function previousYearPeriod(period: string) {
@@ -262,8 +275,10 @@ function previousYearPeriod(period: string) {
 }
 
 function metricRatio(history: MetricHistory, point: MetricHistoryPoint) {
-  if (!point.planMonth) return undefined;
-  return point.actual / point.planMonth * 100;
+  const actual = numericValue(point.actual);
+  const plan = numericValue(point.planMonth);
+  if (actual === undefined || plan === undefined || plan === 0) return undefined;
+  return actual / plan * 100;
 }
 
 function getPresentation(item: KpiCard, data?: DashboardBootstrap): KpiPresentation {
@@ -274,11 +289,13 @@ function getPresentation(item: KpiCard, data?: DashboardBootstrap): KpiPresentat
     const same = historyPoint(data, item.id, previousYearPeriod(data.period));
     const sameChange = same && same.actual !== 0 ? (point.actual / same.actual - 1) * 100 : undefined;
     const year = data.period.slice(0, 4);
-    const annualPlan = history.annualPlans[year];
+    const annualPlan = history.annualPlans?.[year];
     const relation = history.direction === 'lower' ? 'lte' : history.direction === 'higher' ? 'gte' : 'info';
     const compareText = history.direction === 'info'
       ? 'Thông tin kỳ báo cáo'
-      : `${ratio?.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}% KH tháng`;
+      : ratio !== undefined
+        ? `${ratio.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}% KH tháng`
+        : 'Chưa có KH tháng';
     const insight = [
       `Thực hiện ${periodLabel(data.period).toLowerCase()}: ${metricFormat(history, point.actual)}; kế hoạch tháng: ${metricFormat(history, point.planMonth)}.`,
       history.aggregate === 'sum'
@@ -349,11 +366,13 @@ function statusToneClass(tone: Tone) {
 }
 
 function forecastFor(history: MetricHistory, period: string) {
-  const currentIndex = history.points.findIndex((point) => point.period === period);
+  const points = Array.isArray(history.points) ? history.points : [];
+  const currentIndex = points.findIndex((point) => point.period === period);
   if (currentIndex < 0) return null;
-  const window = history.points.slice(Math.max(0, currentIndex - 5), currentIndex + 1);
+  const window = points.slice(Math.max(0, currentIndex - 5), currentIndex + 1);
   if (window.length < 6) return null;
-  const values = window.map((point) => point.actual);
+  const values = window.map((point) => numericValue(point.actual)).filter((value): value is number => value !== undefined);
+  if (values.length < 6) return null;
   const n = values.length;
   const meanX = (n - 1) / 2;
   const meanY = values.reduce((a, b) => a + b, 0) / n;
@@ -369,14 +388,15 @@ function forecastFor(history: MetricHistory, period: string) {
   const month = Number(monthText);
   const futureCount = Math.max(0, 12 - month);
   const future = Array.from({ length: futureCount }, (_, offset) => Math.max(0, intercept + slope * (n + offset)));
-  const current = history.points[currentIndex];
-  const yearActual = history.points.filter((point) => point.period.startsWith(year) && Number(point.period.slice(5)) <= month).map((point) => point.actual);
+  const current = points[currentIndex];
+  const yearActual = points.filter((point) => point.period.startsWith(year) && Number(point.period.slice(5)) <= month).map((point) => numericValue(point.actual)).filter((value): value is number => value !== undefined);
   let yearEnd: number;
-  if (history.aggregate === 'sum') yearEnd = current.ytd + future.reduce((a, b) => a + b, 0);
+  const currentYtd = numericValue(current.ytd);
+  if (history.aggregate === 'sum') yearEnd = (currentYtd ?? yearActual.reduce((a, b) => a + b, 0)) + future.reduce((a, b) => a + b, 0);
   else if (history.aggregate === 'avg') yearEnd = [...yearActual, ...future].reduce((a, b) => a + b, 0) / Math.max(1, yearActual.length + future.length);
-  else yearEnd = future.length ? future[future.length - 1] : current.actual;
-  const nextMonth = future[0] ?? current.actual;
-  const annualPlan = history.annualPlans[year];
+  else yearEnd = future.length ? future[future.length - 1] : (numericValue(current.actual) ?? 0);
+  const nextMonth = future[0] ?? numericValue(current.actual) ?? 0;
+  const annualPlan = history.annualPlans?.[year];
   return {
     future,
     nextMonth,
@@ -414,15 +434,16 @@ function HistoryChart({ data, kpiId, mode }: { data: DashboardBootstrap; kpiId: 
   if (!history) return null;
   const year = data.period.slice(0, 4);
   const month = Number(data.period.slice(5));
-  const points = history.points.filter((point) => point.period.startsWith(year));
-  const prior = history.points.filter((point) => point.period.startsWith(String(Number(year) - 1)));
+  const historyPoints = Array.isArray(history.points) ? history.points : [];
+  const points = historyPoints.filter((point) => point.period.startsWith(year));
+  const prior = historyPoints.filter((point) => point.period.startsWith(String(Number(year) - 1)));
   const forecast = forecastFor(history, data.period);
-  const actualValues = points.map((point, index) => index < month ? point.actual : NaN);
-  const planValues = points.map((point) => point.planMonth);
-  const sameValues = prior.map((point) => point.actual);
+  const actualValues = points.map((point, index) => index < month ? (numericValue(point.actual) ?? NaN) : NaN);
+  const planValues = points.map((point) => numericValue(point.planMonth) ?? NaN);
+  const sameValues = prior.map((point) => numericValue(point.actual) ?? NaN);
   const forecastValues = points.map((_, index) => {
     if (index < month - 1) return NaN;
-    if (index === month - 1) return points[index]?.actual ?? NaN;
+    if (index === month - 1) return numericValue(points[index]?.actual) ?? NaN;
     return forecast?.future[index - month] ?? NaN;
   });
   const all = [...actualValues, ...planValues, ...(mode === 'same' ? sameValues : []), ...(mode === 'forecast' ? forecastValues : [])].filter(Number.isFinite) as number[];
@@ -440,13 +461,13 @@ function HistoryChart({ data, kpiId, mode }: { data: DashboardBootstrap; kpiId: 
   const forecastPath = smoothChartPath(forecastValues, x, y);
   const currentIndex = Math.max(0, Math.min(month - 1, points.length - 1));
   const currentPoint = points[currentIndex];
-  const currentValue = currentPoint?.actual;
+  const currentValue = numericValue(currentPoint?.actual);
   const currentX = x(currentIndex);
   const currentY = Number.isFinite(currentValue) ? y(currentValue) : 0;
   const tooltipWidth = 112;
   const tooltipX = Math.max(5, Math.min(360 - tooltipWidth - 5, currentX - tooltipWidth / 2));
   const tooltipY = Math.max(5, currentY - 31);
-  const planReference = currentPoint?.planMonth ?? planValues.find(Number.isFinite) ?? rawMax;
+  const planReference = numericValue(currentPoint?.planMonth) ?? planValues.find(Number.isFinite) ?? rawMax;
   const gridValues = [rawMin, planReference, rawMax];
   return (
     <div className="historyChartWrap">
@@ -487,8 +508,11 @@ function chartKindFor(kpiId:string, history:MetricHistory) {
 }
 
 function GaugeChart({ history, point }: { history:MetricHistory; point:MetricHistoryPoint }) {
-  const rawRatio = point.planMonth ? point.actual / point.planMonth * 100 : 100;
-  const score = history.direction === 'lower' ? Math.min(100, point.planMonth / Math.max(point.actual,.00001) * 100) : Math.min(100, rawRatio);
+  const actual = numericValue(point.actual);
+  const plan = numericValue(point.planMonth);
+  if (actual === undefined) return <div className="lockedPanel"><span>◌</span><b>Chưa có dữ liệu thực hiện</b></div>;
+  const rawRatio = plan && plan !== 0 ? actual / plan * 100 : 100;
+  const score = history.direction === 'lower' && plan !== undefined ? Math.min(100, plan / Math.max(actual,.00001) * 100) : Math.min(100, rawRatio);
   const radius = 42;
   const circumference = 2*Math.PI*radius;
   return (
@@ -499,20 +523,23 @@ function GaugeChart({ history, point }: { history:MetricHistory; point:MetricHis
         <text x="60" y="56" textAnchor="middle" className="gaugeMain">{rawRatio.toLocaleString('vi-VN',{maximumFractionDigits:1})}%</text>
         <text x="60" y="72" textAnchor="middle" className="gaugeSub">TH / KH tháng</text>
       </svg>
-      <div className="gaugeFacts"><span><small>Thực hiện</small><b>{metricFormat(history,point.actual)}</b></span><span><small>Kế hoạch</small><b>{metricFormat(history,point.planMonth)}</b></span></div>
+      <div className="gaugeFacts"><span><small>Thực hiện</small><b>{metricFormat(history,actual)}</b></span><span><small>Kế hoạch</small><b>{metricFormat(history,plan)}</b></span></div>
     </div>
   );
 }
 
 function ThresholdChart({ history, point }: { history:MetricHistory; point:MetricHistoryPoint }) {
-  const max = Math.max(point.actual,point.planMonth,1)*1.25;
-  const actualWidth = Math.min(100,point.actual/max*100);
-  const planLeft = Math.min(100,point.planMonth/max*100);
-  const good = history.direction === 'lower' ? point.actual <= point.planMonth : point.actual >= point.planMonth;
+  const actual = numericValue(point.actual);
+  const plan = numericValue(point.planMonth);
+  if (actual === undefined) return <div className="lockedPanel"><span>—</span><b>Chưa có dữ liệu thực hiện</b></div>;
+  const max = Math.max(actual,plan ?? 0,1)*1.25;
+  const actualWidth = Math.min(100,actual/max*100);
+  const planLeft = plan === undefined ? undefined : Math.min(100,plan/max*100);
+  const good = plan === undefined ? true : history.direction === 'lower' ? actual <= plan : actual >= plan;
   return (
     <div className="thresholdChart">
-      <div className="thresholdLabels"><span><small>TH</small><b>{metricFormat(history,point.actual)}</b></span><span><small>Ngưỡng/KH</small><b>{metricFormat(history,point.planMonth)}</b></span></div>
-      <div className="thresholdTrack"><span className={good?'good':'risk'} style={{width:`${actualWidth}%`}}/><i style={{left:`${planLeft}%`}} title="Ngưỡng kế hoạch"/></div>
+      <div className="thresholdLabels"><span><small>TH</small><b>{metricFormat(history,actual)}</b></span><span><small>Ngưỡng/KH</small><b>{metricFormat(history,plan)}</b></span></div>
+      <div className="thresholdTrack"><span className={good?'good':'risk'} style={{width:`${actualWidth}%`}}/>{planLeft !== undefined && <i style={{left:`${planLeft}%`}} title="Ngưỡng kế hoạch"/>}</div>
       <small>{history.direction==='lower'?'Vạch đứng là mức tối đa/khuyến nghị':'Vạch đứng là kế hoạch cần đạt'}</small>
     </div>
   );
@@ -522,17 +549,22 @@ function MonthlyColumnsChart({ data, kpiId }: { data:DashboardBootstrap; kpiId:s
   const history=data.history?.[kpiId];
   if(!history) return null;
   const year=data.period.slice(0,4), month=Number(data.period.slice(5));
-  const points=history.points.filter((x)=>x.period.startsWith(year));
-  const max=Math.max(...points.flatMap((x)=>[x.actual,x.planMonth]),1);
+  const points=(Array.isArray(history.points)?history.points:[]).filter((x)=>x.period.startsWith(year));
+  const numericPairs=points.flatMap((x)=>[numericValue(x.actual),numericValue(x.planMonth)]).filter((value): value is number => value !== undefined);
+  const max=Math.max(...numericPairs,1);
   return <div className="columnChartWrap"><div className="columnChart">{points.map((point,i)=>{
     const showActual=i<month;
-    return <div className="columnGroup" key={point.period}><div className="columns"><i className="plan" style={{height:`${Math.max(3,point.planMonth/max*92)}%`}}/><i className="actual" style={{height:showActual?`${Math.max(3,point.actual/max*92)}%`:'0%'}}/></div><small>T{i+1}</small></div>;
+    const actual=numericValue(point.actual);
+    const plan=numericValue(point.planMonth);
+    return <div className="columnGroup" key={point.period}><div className="columns"><i className="plan" style={{height:plan===undefined?'0%':`${Math.max(3,plan/max*92)}%`}}/><i className="actual" style={{height:showActual&&actual!==undefined?`${Math.max(3,actual/max*92)}%`:'0%'}}/></div><small>T{i+1}</small></div>;
   })}</div><div className="chartLegend"><span className="actual">TH</span><span className="plan">KH</span></div></div>;
 }
 
 function ParetoIncidentChart({ data }: { data:DashboardBootstrap }) {
-  const max=Math.max(...data.incidentCauses.map((x)=>x.monthShare),1);
-  return <div className="paretoChart"><div className="paretoTitle">Cơ cấu nguyên nhân sự cố tháng</div>{data.incidentCauses.slice(0,5).map((cause)=><div className="paretoRow" key={cause.label}><span>{cause.label}</span><div><i style={{width:`${cause.monthShare/max*100}%`}}/></div><b>{cause.monthShare}%</b></div>)}</div>;
+  const causes=Array.isArray(data.incidentCauses)?data.incidentCauses:[];
+  if(!causes.length) return <div className="lockedPanel"><span>≡</span><b>Chưa có cơ cấu nguyên nhân sự cố</b></div>;
+  const max=Math.max(...causes.map((x)=>numericValue(x.monthShare)??0),1);
+  return <div className="paretoChart"><div className="paretoTitle">Cơ cấu nguyên nhân sự cố tháng</div>{causes.slice(0,5).map((cause)=><div className="paretoRow" key={cause.label}><span>{cause.label}</span><div><i style={{width:`${(numericValue(cause.monthShare)??0)/max*100}%`}}/></div><b>{metricFormat({id:'incident',unit:'%',direction:'info',aggregate:'snapshot',decimals:1,annualPlans:{},points:[]},cause.monthShare)}</b></div>)}</div>;
 }
 
 function AdaptiveCurrentChart({ data, kpiId }: { data:DashboardBootstrap; kpiId:string }) {
@@ -560,11 +592,14 @@ function rangeLabel(selection:RangeSelection) {
 }
 function rangeValue(history:MetricHistory, selection:RangeSelection) {
   const months=rangeMonths(selection);
-  const points=months.map((month)=>history.points.find((p)=>p.period===`${selection.year}-${String(month).padStart(2,'0')}`)).filter(Boolean) as MetricHistoryPoint[];
-  if(!points.length) return null;
-  const actual=history.aggregate==='sum'?points.reduce((a,b)=>a+b.actual,0):history.aggregate==='avg'?points.reduce((a,b)=>a+b.actual,0)/points.length:points[points.length-1].actual;
-  const plan=history.aggregate==='sum'?points.reduce((a,b)=>a+b.planMonth,0):history.aggregate==='avg'?points.reduce((a,b)=>a+b.planMonth,0)/points.length:points[points.length-1].planMonth;
-  return {actual,plan,ratio:plan?actual/plan*100:100};
+  const source=Array.isArray(history.points)?history.points:[];
+  const points=months.map((month)=>source.find((p)=>p.period===`${selection.year}-${String(month).padStart(2,'0')}`)).filter(Boolean) as MetricHistoryPoint[];
+  const actualValues=points.map((p)=>numericValue(p.actual)).filter((value): value is number => value !== undefined);
+  if(!actualValues.length) return null;
+  const planValues=points.map((p)=>numericValue(p.planMonth)).filter((value): value is number => value !== undefined);
+  const actual=history.aggregate==='sum'?actualValues.reduce((a,b)=>a+b,0):history.aggregate==='avg'?actualValues.reduce((a,b)=>a+b,0)/actualValues.length:actualValues[actualValues.length-1];
+  const plan=planValues.length?(history.aggregate==='sum'?planValues.reduce((a,b)=>a+b,0):history.aggregate==='avg'?planValues.reduce((a,b)=>a+b,0)/planValues.length:planValues[planValues.length-1]):undefined;
+  return {actual,plan,ratio:plan&&plan!==0?actual/plan*100:undefined};
 }
 
 function RangeComparisonPanel({ data, kpiId, comparison, edit }: { data:DashboardBootstrap; kpiId:string; comparison:ComparisonSelection; edit:()=>void }) {
@@ -578,8 +613,8 @@ function RangeComparisonPanel({ data, kpiId, comparison, edit }: { data:Dashboar
   return <div className="rangeComparePanel">
     <div className="rangeCompareHead"><div><b>So sánh kỳ tùy chọn</b><small>Tháng · Quý · 6 tháng</small></div><button onClick={edit}>⚙ Bộ lọc</button></div>
     <div className="rangePair">
-      <article><small>{rangeLabel(comparison.left)}</small><b>{metricFormat(history,left.actual)}</b><em>{left.ratio.toLocaleString('vi-VN',{maximumFractionDigits:1})}% KH</em><div><i style={{width:`${left.actual/max*100}%`}}/></div></article>
-      <article><small>{rangeLabel(comparison.right)}</small><b>{metricFormat(history,right.actual)}</b><em>{right.ratio.toLocaleString('vi-VN',{maximumFractionDigits:1})}% KH</em><div><i style={{width:`${right.actual/max*100}%`}}/></div></article>
+      <article><small>{rangeLabel(comparison.left)}</small><b>{metricFormat(history,left.actual)}</b><em>{left.ratio===undefined?'Chưa có KH':`${left.ratio.toLocaleString('vi-VN',{maximumFractionDigits:1})}% KH`}</em><div><i style={{width:`${left.actual/max*100}%`}}/></div></article>
+      <article><small>{rangeLabel(comparison.right)}</small><b>{metricFormat(history,right.actual)}</b><em>{right.ratio===undefined?'Chưa có KH':`${right.ratio.toLocaleString('vi-VN',{maximumFractionDigits:1})}% KH`}</em><div><i style={{width:`${right.actual/max*100}%`}}/></div></article>
     </div>
     <p className={improvement>=0?'compareGood':'compareRisk'}>{improvement>=0?'▲':'▼'} {Math.abs(delta).toLocaleString('vi-VN',{maximumFractionDigits:1})}% so với kỳ đối chiếu {history.direction==='lower'?'(giảm là tích cực)':''}</p>
   </div>;

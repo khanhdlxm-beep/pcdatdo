@@ -7,14 +7,14 @@ export type ConflictItem = { id:string; label:string; sourceA:string; valueA:str
 export type IncidentCause = { label:string; monthValue:number; monthShare:number; ytdValue:number; ytdShare:number };
 export type Reliability = { id:'SAIFI'|'SAIDI'|'MAIFI'; unit:string; targetYear:number; targetPeriod:number; month:number; ytd:number; status:string };
 export type PlanItem = { id:string; owner:string; title:string; status:string; note?:string };
-export type MetricHistoryPoint = { period:string; actual:number; planMonth:number; ytd:number; planYtd:number };
+export type MetricHistoryPoint = { period:string; actual:number; planMonth?:number; ytd?:number; planYtd?:number };
 export type MetricHistory = {
   id:string;
   unit:string;
   direction:'higher'|'lower'|'info';
   aggregate:'sum'|'avg'|'snapshot';
   decimals:number;
-  annualPlans:Record<string,number>;
+  annualPlans?:Record<string,number>;
   points:MetricHistoryPoint[];
 };
 export type DashboardBootstrap = {
