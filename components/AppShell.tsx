@@ -386,6 +386,29 @@ function forecastFor(history: MetricHistory, period: string) {
   };
 }
 
+function smoothChartPath(values: number[], x: (index: number) => number, y: (value: number) => number) {
+  const segments: { index: number; value: number }[][] = [];
+  let active: { index: number; value: number }[] = [];
+  values.forEach((value, index) => {
+    if (Number.isFinite(value)) active.push({ index, value });
+    else if (active.length) { segments.push(active); active = []; }
+  });
+  if (active.length) segments.push(active);
+  return segments.map((segment) => {
+    if (segment.length === 1) return `M ${x(segment[0].index)} ${y(segment[0].value)}`;
+    let d = `M ${x(segment[0].index)} ${y(segment[0].value)}`;
+    for (let i = 1; i < segment.length; i += 1) {
+      const prev = segment[i - 1];
+      const current = segment[i];
+      const x0 = x(prev.index); const y0 = y(prev.value);
+      const x1 = x(current.index); const y1 = y(current.value);
+      const midX = (x0 + x1) / 2;
+      d += ` C ${midX} ${y0}, ${midX} ${y1}, ${x1} ${y1}`;
+    }
+    return d;
+  }).join(' ');
+}
+
 function HistoryChart({ data, kpiId, mode }: { data: DashboardBootstrap; kpiId: string; mode: 'actual' | 'same' | 'forecast' }) {
   const history = data.history?.[kpiId];
   if (!history) return null;
@@ -403,21 +426,47 @@ function HistoryChart({ data, kpiId, mode }: { data: DashboardBootstrap; kpiId: 
     return forecast?.future[index - month] ?? NaN;
   });
   const all = [...actualValues, ...planValues, ...(mode === 'same' ? sameValues : []), ...(mode === 'forecast' ? forecastValues : [])].filter(Number.isFinite) as number[];
-  const max = Math.max(...all, 1);
-  const min = Math.min(...all, 0);
-  const span = Math.max(max - min, max * .2, 1);
-  const x = (index: number) => 18 + index * (324 / 11);
-  const y = (value: number) => 118 - ((value - min) / span) * 88;
-  const poly = (values: number[]) => values.map((value, index) => Number.isFinite(value) ? `${x(index)},${y(value)}` : '').filter(Boolean).join(' ');
+  const rawMax = all.length ? Math.max(...all) : 1;
+  const rawMin = all.length ? Math.min(...all) : 0;
+  const padding = Math.max((rawMax - rawMin) * .14, rawMax * .05, 1);
+  const max = rawMax + padding;
+  const min = Math.max(0, rawMin - padding);
+  const span = Math.max(max - min, 1);
+  const x = (index: number) => 20 + index * (320 / 11);
+  const y = (value: number) => 116 - ((value - min) / span) * 86;
+  const actualPath = smoothChartPath(actualValues, x, y);
+  const planPath = smoothChartPath(planValues, x, y);
+  const samePath = smoothChartPath(sameValues, x, y);
+  const forecastPath = smoothChartPath(forecastValues, x, y);
+  const currentIndex = Math.max(0, Math.min(month - 1, points.length - 1));
+  const currentPoint = points[currentIndex];
+  const currentValue = currentPoint?.actual;
+  const currentX = x(currentIndex);
+  const currentY = Number.isFinite(currentValue) ? y(currentValue) : 0;
+  const tooltipWidth = 112;
+  const tooltipX = Math.max(5, Math.min(360 - tooltipWidth - 5, currentX - tooltipWidth / 2));
+  const tooltipY = Math.max(5, currentY - 31);
+  const planReference = currentPoint?.planMonth ?? planValues.find(Number.isFinite) ?? rawMax;
+  const gridValues = [rawMin, planReference, rawMax];
   return (
     <div className="historyChartWrap">
-      <svg className="historyChart" viewBox="0 0 360 142" role="img" aria-label={`Biểu đồ ${kpiId}`}>
-        <line x1="18" y1="118" x2="342" y2="118" className="chartAxis" />
-        <polyline points={poly(planValues)} className="chartPlan" />
-        {mode === 'same' && <polyline points={poly(sameValues)} className="chartSame" />}
-        <polyline points={poly(actualValues)} className="chartActual" />
-        {mode === 'forecast' && forecast && <polyline points={poly(forecastValues)} className="chartForecast" />}
-        {points.map((_, index) => <text key={index} x={x(index)} y="136" textAnchor="middle" className="chartLabel">T{index + 1}</text>)}
+      <svg className="historyChart" viewBox="0 0 360 148" role="img" aria-label={`Biểu đồ ${kpiId}`}>
+        {gridValues.map((value, index) => (
+          <line key={`${value}-${index}`} x1="20" y1={y(value)} x2="340" y2={y(value)} className={`chartGrid chartGrid${index}`} />
+        ))}
+        <path d={planPath} className="chartPlan" />
+        {mode === 'same' && <path d={samePath} className="chartSame" />}
+        <path d={actualPath} className="chartActual" />
+        {mode === 'forecast' && forecast && <path d={forecastPath} className="chartForecast" />}
+        {Number.isFinite(currentValue) && (
+          <g className="chartCurrentAnchor">
+            <line x1={currentX} y1={currentY} x2={currentX} y2="116" className="chartCurrentGuide" />
+            <circle cx={currentX} cy={currentY} r="5" className="chartAnchor" />
+            <rect x={tooltipX} y={tooltipY} width={tooltipWidth} height="22" rx="7" className="chartTooltipBg" />
+            <text x={tooltipX + tooltipWidth / 2} y={tooltipY + 14.5} textAnchor="middle" className="chartTooltipText">{metricFormat(history, currentValue)}</text>
+          </g>
+        )}
+        {points.map((_, index) => <text key={index} x={x(index)} y="140" textAnchor="middle" className={index === currentIndex ? 'chartLabel current' : 'chartLabel'}>T{index + 1}</text>)}
       </svg>
       <div className="chartLegend">
         <span className="actual">TH</span><span className="plan">KH</span>
@@ -655,13 +704,16 @@ function SummaryCompact({ data }: { data: DashboardBootstrap }) {
   );
 }
 
-function DomainTile({ field, favorite, toggleFavorite, open }: { field: FieldGroup; favorite: boolean; toggleFavorite: () => void; open: () => void }) {
+function DomainTile({ field, favorite, toggleFavorite, open, alertCount, alertTone }: { field: FieldGroup; favorite: boolean; toggleFavorite: () => void; open: () => void; alertCount: number; alertTone: 'danger' | 'warning' | 'none' }) {
   const meta = domainMeta[field.id] ?? { icon: '▦', subtitle: 'Nhóm chỉ tiêu' };
   return (
     <article className={`domainTile domain-${field.id}`} onClick={open} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter') open(); }}>
       <div className="domainTileTop">
         <span className="domainTileIcon">{meta.icon}</span>
-        <FavoriteButton active={favorite} onClick={toggleFavorite} label={`Ưu tiên ${field.title}`} />
+        <div className="domainTileControls">
+          {alertCount > 0 && <span className={`domainAlertBadge ${alertTone}`} title={`${alertCount} cảnh báo cần chú ý`}>{alertCount}</span>}
+          <FavoriteButton active={favorite} onClick={toggleFavorite} label={`Ưu tiên ${field.title}`} />
+        </div>
       </div>
       <div className="domainTileArt"><DomainIllustration id={field.id} /></div>
       <div className="domainTileText">
@@ -693,15 +745,21 @@ function HomeTab({ data, favoriteDomains, toggleDomainFavorite, openDomain, open
         <button className="searchIcon" onClick={openSearch} aria-label="Tìm kiếm">⌕</button>
       </div>
       <div className="domainGridV15">
-        {ordered.map((field) => (
-          <DomainTile
-            key={field.id}
-            field={field}
-            favorite={favoriteDomains.includes(field.id)}
-            toggleFavorite={() => toggleDomainFavorite(field.id)}
-            open={() => openDomain(field.id)}
-          />
-        ))}
+        {ordered.map((field) => {
+          const domainAlerts = data.alerts.filter((alert) => (alert.domainId === field.id || alert.domain === field.title) && (alert.severity === 'red' || alert.severity === 'yellow'));
+          const alertTone = domainAlerts.some((alert) => alert.severity === 'red') ? 'danger' : domainAlerts.length ? 'warning' : 'none';
+          return (
+            <DomainTile
+              key={field.id}
+              field={field}
+              favorite={favoriteDomains.includes(field.id)}
+              toggleFavorite={() => toggleDomainFavorite(field.id)}
+              open={() => openDomain(field.id)}
+              alertCount={domainAlerts.length}
+              alertTone={alertTone}
+            />
+          );
+        })}
       </div>
       <button className="compactAlertShortcut" onClick={goAlerts}>
         <span>⚠</span>
