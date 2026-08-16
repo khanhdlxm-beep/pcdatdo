@@ -517,6 +517,7 @@ function HistoryChart({ data, kpiId, mode }: { data: DashboardBootstrap; kpiId: 
       <rect x={plotLeft} y={plotTop} width={plotRight - plotLeft} height={plotBottom - plotTop} className="chartPlotDismiss" onPointerDown={() => setSelectedIndex(null)} />
       {gridValues.map((value, index) => <g key={`${value}-${index}`}><line x1={plotLeft} y1={y(value)} x2={plotRight} y2={y(value)} className={`chartGrid chartGrid${index}`} /><text x={plotLeft - 7} y={y(value) + 3.5} textAnchor="end" className="chartAxisLabel">{axisLabel(value)}</text></g>)}
       <path d={planPath} className="chartPlan"/><path d={actualPath} className="chartActual"/>{mode === 'forecast' && forecast && <path d={forecastPath} className="chartForecast"/>}
+      {slots.map((point,index)=>{const av=numericValue(mode==='ytd'?point?.ytd:point?.actual);const prev=index>0?slots[index-1]:undefined;if(index>=month||av===undefined||!isAnomalyPoint(history,point,prev))return null;return <g key={`anomaly-${index}`} className="chartAnomaly"><circle cx={x(index)} cy={y(av)} r="7"/><text x={x(index)} y={y(av)+3} textAnchor="middle">!</text></g>})}
       {slots.map((point,index)=>{const value=numericValue(mode === 'ytd' ? point?.ytd : point?.actual) ?? numericValue(mode === 'ytd' ? point?.planYtd : point?.planMonth);if(value===undefined)return null;return <circle key={index} cx={x(index)} cy={y(value)} r="14" className="chartTouchPoint" onPointerDown={(event)=>{event.stopPropagation();pin(index)}} onMouseEnter={()=>{if(selectedIndex===null)setHoveredIndex(index)}}/>})}
       {hasDetail && detailValue !== undefined && <g className="chartSelectedAnchor"><line x1={detailX} y1={detailY} x2={detailX} y2={plotBottom} className="chartCurrentGuide"/><circle cx={detailX} cy={detailY} r="5" className="chartAnchor"/></g>}
       {Array.from({length:12},(_,index)=><text key={index} x={x(index)} y="151" textAnchor="middle" className={index===activeIndex?'chartLabel current':index===month-1?'chartLabel currentPeriod':'chartLabel'} onPointerDown={(event)=>{event.stopPropagation();if(slots[index])pin(index)}} onMouseEnter={()=>{if(slots[index]&&selectedIndex===null)setHoveredIndex(index)}}>{`T${index+1}`}</text>)}
@@ -556,6 +557,7 @@ function MonthlyActualTargetChart({ data, kpiId }: { data: DashboardBootstrap; k
         {showActual&&<rect x={cx-barWidth/2} y={y(av!)} width={barWidth} height={Math.max(1,plotBottom-y(av!))} rx="4" className="monthlyActualBar"/>}
         {pv!==undefined&&<line x1={cx-10} x2={cx+10} y1={y(pv)} y2={y(pv)} className="monthlyPlanTarget"/>}
         {i===currentIndex&&showActual&&<circle cx={cx} cy={y(av!)} r="3.5" className="currentBarAnchor"/>}
+        {showActual&&isAnomalyPoint(history,point,i>0?points[i-1]:undefined)&&<text x={cx} y={Math.max(plotTop+7,y(av!)-7)} textAnchor="middle" className="chartAnomalyMark">!</text>}
         <text x={cx} y="151" textAnchor="middle" className={active===i?'chartLabel current':i===currentIndex?'chartLabel currentPeriod':'chartLabel'}>{`T${i+1}`}</text>
       </g>})}
       <rect x={plotLeft-12} y={plotTop} width={plotRight-plotLeft+24} height={plotBottom-plotTop+24} className="chartScrubberLayer"
@@ -663,7 +665,7 @@ function RangeComparisonPanel({ data, kpiId, comparison, edit }: { data:Dashboar
       <article><small>{rangeLabel(comparison.left)}</small><b>{metricFormat(history,left.actual)}</b><em>{left.ratio===undefined?'Chưa có KH':`${left.ratio.toLocaleString('vi-VN',{maximumFractionDigits:1})}% KH`}</em><div><i style={{width:`${left.actual/max*100}%`}}/></div></article>
       <article><small>{rangeLabel(comparison.right)}</small><b>{metricFormat(history,right.actual)}</b><em>{right.ratio===undefined?'Chưa có KH':`${right.ratio.toLocaleString('vi-VN',{maximumFractionDigits:1})}% KH`}</em><div><i style={{width:`${right.actual/max*100}%`}}/></div></article>
     </div>
-    <p className={improvement>=0?'compareGood':'compareRisk'}>{improvement>=0?'▲':'▼'} {Math.abs(delta).toLocaleString('vi-VN',{maximumFractionDigits:1})}% so với kỳ đối chiếu {history.direction==='lower'?'(giảm là tích cực)':''}</p>
+    <div className={`compareConclusion ${improvement>=0?'compareGood':'compareRisk'}`}><b>{improvement>=0?'▲ Xu hướng tích cực':'▼ Cần chú ý'}</b><span>{rangeLabel(comparison.left)} {delta>=0?'cao hơn':'thấp hơn'} {Math.abs(delta).toLocaleString('vi-VN',{maximumFractionDigits:1})}% so với {rangeLabel(comparison.right)}{history.direction==='lower'?' · KPI này giảm là tích cực':''}.</span></div>
   </div>;
 }
 
@@ -793,7 +795,55 @@ function SummaryCompact({ data }: { data: DashboardBootstrap }) {
   );
 }
 
-function DomainTile({ field, favorite, toggleFavorite, open, alertCount, alertTone }: { field: FieldGroup; favorite: boolean; toggleFavorite: () => void; open: () => void; alertCount: number; alertTone: 'danger' | 'warning' | 'none' }) {
+type TrendSignal = 'improve' | 'stable' | 'worsen' | 'none';
+
+function previousMonthPeriod(period: string) {
+  const [year, month] = period.split('-').map(Number);
+  const d = new Date(year, month - 2, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+function trendSignalForKpi(data: DashboardBootstrap, kpiId: string): TrendSignal {
+  const history = data.history?.[kpiId];
+  if (!history) return 'none';
+  const current = historyPoint(data, kpiId);
+  const previous = historyPoint(data, kpiId, previousMonthPeriod(data.period));
+  const actual = numericValue(current?.actual), plan = numericValue(current?.planMonth);
+  const prevActual = numericValue(previous?.actual), prevPlan = numericValue(previous?.planMonth);
+  if (actual === undefined || prevActual === undefined) return 'none';
+  const score = (a: number, p?: number) => {
+    if (p !== undefined && p !== 0) return history.direction === 'lower' ? p / Math.max(a, .000001) : a / p;
+    if (history.direction === 'lower') return 1 / Math.max(a, .000001);
+    if (history.direction === 'higher') return a;
+    return 1;
+  };
+  const nowScore = score(actual, plan), prevScore = score(prevActual, prevPlan);
+  if (!Number.isFinite(nowScore) || !Number.isFinite(prevScore) || prevScore === 0) return 'none';
+  const delta = (nowScore / prevScore - 1) * 100;
+  if (delta > 1.5) return 'improve';
+  if (delta < -1.5) return 'worsen';
+  return 'stable';
+}
+
+function domainTrendSignal(data: DashboardBootstrap, field: FieldGroup): TrendSignal {
+  const signals = field.items.map((item) => trendSignalForKpi(data, item.id)).filter((signal) => signal !== 'none');
+  if (!signals.length) return 'none';
+  const improve = signals.filter((signal) => signal === 'improve').length;
+  const worsen = signals.filter((signal) => signal === 'worsen').length;
+  if (worsen > improve) return 'worsen';
+  if (improve > worsen) return 'improve';
+  return 'stable';
+}
+
+function isAnomalyPoint(history: MetricHistory, current?: MetricHistoryPoint, previous?: MetricHistoryPoint) {
+  const actual = numericValue(current?.actual), prev = numericValue(previous?.actual);
+  if (actual === undefined || prev === undefined || prev === 0) return false;
+  const change = Math.abs((actual / prev - 1) * 100);
+  const threshold = history.unit === '%' ? 5 : history.aggregate === 'snapshot' ? 8 : 12;
+  return change >= threshold;
+}
+
+function DomainTile({ field, favorite, toggleFavorite, open, alertCount, alertTone, trend }: { field: FieldGroup; favorite: boolean; toggleFavorite: () => void; open: () => void; alertCount: number; alertTone: 'danger' | 'warning' | 'none'; trend: TrendSignal }) {
   const meta = domainMeta[field.id] ?? { icon: '▦', subtitle: 'Nhóm chỉ tiêu' };
   return (
     <article className={`domainTile domain-${field.id}`} onClick={open} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter') open(); }}>
@@ -808,6 +858,7 @@ function DomainTile({ field, favorite, toggleFavorite, open, alertCount, alertTo
       <div className="domainTileText">
         <h2>{field.title}</h2>
         <p>{meta.subtitle}</p>
+        {trend !== 'none' && <span className={`domainTrend ${trend}`}>{trend === 'improve' ? '↑ Cải thiện' : trend === 'worsen' ? '↓ Cần chú ý' : '→ Ổn định'}</span>}
       </div>
       <span className="domainArrow">›</span>
     </article>
@@ -822,32 +873,43 @@ function HomeTab({ data, favoriteDomains, toggleDomainFavorite, openDomain, open
   openSearch: () => void;
   goAlerts: () => void;
 }) {
-  const ordered = useMemo(
-    () => [...data.fields].sort((a, b) => Number(favoriteDomains.includes(b.id)) - Number(favoriteDomains.includes(a.id))),
-    [data.fields, favoriteDomains],
-  );
-  const activeAlerts = data.alerts.filter((a) => a.severity === 'red' || a.severity === 'yellow').length;
+  const homeModel = useMemo(() => {
+    const alertMap = new Map<string, { count: number; tone: 'danger' | 'warning' | 'none' }>();
+    data.fields.forEach((field) => {
+      const rows = data.alerts.filter((alert) => (alert.domainId === field.id || alert.domain === field.title) && (alert.severity === 'red' || alert.severity === 'yellow'));
+      alertMap.set(field.id, { count: rows.length, tone: rows.some((alert) => alert.severity === 'red') ? 'danger' : rows.length ? 'warning' : 'none' });
+    });
+    const trendMap = new Map(data.fields.map((field) => [field.id, domainTrendSignal(data, field)]));
+    const allSignals = data.fields.flatMap((field) => field.items.map((item) => trendSignalForKpi(data, item.id))).filter((signal) => signal !== 'none');
+    return {
+      alertMap,
+      trendMap,
+      pulse: {
+        improve: allSignals.filter((signal) => signal === 'improve').length,
+        stable: allSignals.filter((signal) => signal === 'stable').length,
+        worsen: allSignals.filter((signal) => signal === 'worsen').length,
+      },
+      activeAlerts: data.alerts.filter((alert) => alert.severity === 'red' || alert.severity === 'yellow').length,
+    };
+  }, [data]);
+  const ordered = useMemo(() => [...data.fields].sort((a, b) => Number(favoriteDomains.includes(b.id)) - Number(favoriteDomains.includes(a.id))), [data.fields, favoriteDomains]);
+  const activeAlerts = homeModel.activeAlerts;
   return (
     <>
+      <section className="executivePulse" aria-label="Nhịp điều hành">
+        <div><small>Nhịp điều hành</small><b>Xu hướng so tháng trước</b></div>
+        <span className="improve">↑ {homeModel.pulse.improve} cải thiện</span>
+        <span className="stable">→ {homeModel.pulse.stable} ổn định</span>
+        <button className="worsen" onClick={goAlerts}>↓ {homeModel.pulse.worsen} xấu đi</button>
+      </section>
       <div className="sectionHeading compact">
         <div><b>Lĩnh vực</b><small>Chọn lĩnh vực để xem KPI tháng hiện tại</small></div>
         <button className="searchIcon" onClick={openSearch} aria-label="Tìm kiếm">⌕</button>
       </div>
       <div className="domainGridV15">
         {ordered.map((field) => {
-          const domainAlerts = data.alerts.filter((alert) => (alert.domainId === field.id || alert.domain === field.title) && (alert.severity === 'red' || alert.severity === 'yellow'));
-          const alertTone = domainAlerts.some((alert) => alert.severity === 'red') ? 'danger' : domainAlerts.length ? 'warning' : 'none';
-          return (
-            <DomainTile
-              key={field.id}
-              field={field}
-              favorite={favoriteDomains.includes(field.id)}
-              toggleFavorite={() => toggleDomainFavorite(field.id)}
-              open={() => openDomain(field.id)}
-              alertCount={domainAlerts.length}
-              alertTone={alertTone}
-            />
-          );
+          const alertInfo = homeModel.alertMap.get(field.id) ?? { count: 0, tone: 'none' as const };
+          return <DomainTile key={field.id} field={field} favorite={favoriteDomains.includes(field.id)} toggleFavorite={() => toggleDomainFavorite(field.id)} open={() => openDomain(field.id)} alertCount={alertInfo.count} alertTone={alertInfo.tone} trend={homeModel.trendMap.get(field.id) ?? 'none'} />;
         })}
       </div>
       <button className="compactAlertShortcut" onClick={goAlerts}>
@@ -942,6 +1004,8 @@ function KpiDetail({ data, domainId, kpiId, favoriteKpis, toggleKpiFavorite, bac
   const field = data.fields.find((x) => x.id === domainId);
   const item = field?.items.find((x) => x.id === kpiId);
   const [mode, setMode] = useState<DetailMode>('compare');
+  const [focusChart, setFocusChart] = useState(false);
+  useEffect(() => { setFocusChart(false); }, [kpiId, mode]);
   if (!field || !item) return null;
   const p = getPresentation(item, data);
   const planIds = officialPlanByDomain[domainId] ?? [];
@@ -970,8 +1034,9 @@ function KpiDetail({ data, domainId, kpiId, favoriteKpis, toggleKpiFavorite, bac
         </div>
         <button className={`compareFilterBtn ${mode === 'range' ? 'active' : ''}`} onClick={() => { setMode('range'); openCompare(); }}>⇄ So sánh</button>
       </div>
-      <section className="detailCard">
-        {mode === 'compare' && <><div className="detailCardTitle">Thực hiện tháng & kế hoạch</div><AdaptiveCurrentChart data={data} kpiId={item.id}/></>}
+      <section className={`detailCard chartDetailCard ${focusChart ? 'chartFocusCard' : ''}`}>
+        <div className="detailCardHead"><div><div className="detailCardTitle">{mode === 'compare' ? 'Thực hiện tháng & kế hoạch' : mode === 'ytd' ? 'Lũy kế & kế hoạch' : mode === 'same' ? 'So sánh cùng kỳ' : mode === 'range' ? 'So sánh kỳ tùy chọn' : 'Dự báo xu hướng'}</div>{focusChart && <small>{item.label} · {periodLabel(data.period)}</small>}</div><button type="button" className="chartFocusBtn" onClick={() => setFocusChart((value) => !value)} aria-label={focusChart ? 'Đóng chế độ tập trung' : 'Mở chế độ tập trung'}>{focusChart ? '×' : '⛶'}</button></div>
+        {mode === 'compare' && <AdaptiveCurrentChart data={data} kpiId={item.id}/>} 
         {mode === 'ytd' && <><div className="statPair"><div><small>Lũy kế / hiện trạng</small><b>{p.ytd ?? item.detail ?? item.value}</b></div><span>↔</span><div><small>Kế hoạch / ngưỡng</small><b>{p.plan ?? item.plan ?? 'Chưa có'}</b></div></div>{data.history?.[item.id] && <HistoryChart data={data} kpiId={item.id} mode="ytd" />}</>}
         {mode === 'same' && <SamePeriodPanel data={data} kpiId={item.id} />}
         {mode === 'range' && <RangeComparisonPanel data={data} kpiId={item.id} comparison={comparison} edit={openCompare}/>} 
