@@ -150,14 +150,16 @@ function buildHistory(config: MetricConfig): MetricHistory {
 
 export const DEMO_HISTORY: Record<string, MetricHistory> = Object.fromEntries(configs.map((c)=>[c.id,buildHistory(c)]));
 
-function valueText(value: number, unit: string, digits: number) {
+function valueText(value: number | undefined, unit: string, digits: number) {
+  if (value === undefined || !Number.isFinite(value)) return '—';
   const formatted = value.toLocaleString('vi-VN',{minimumFractionDigits:digits>0?Math.min(digits,2):0,maximumFractionDigits:digits});
   return unit ? `${formatted} ${unit}` : formatted;
 }
 
 function ratioFor(history: MetricHistory, point: MetricHistoryPoint) {
-  if (!point.planMonth) return 100;
-  return point.actual / point.planMonth * 100;
+  const planMonth = point.planMonth;
+  if (planMonth === undefined || planMonth === 0) return 100;
+  return point.actual / planMonth * 100;
 }
 
 function toneFor(history: MetricHistory, point: MetricHistoryPoint): Tone {
@@ -246,12 +248,18 @@ export function buildDemoDashboard(period = '2026-07'): DashboardBootstrap {
   const get = (id:string)=>DEMO_HISTORY[id].points.find((p)=>p.period===safePeriod)!;
   const reliability = (['SAIFI','SAIDI','MAIFI'] as const).map((id)=>{
     const h=DEMO_HISTORY[id], p=get(id), year=safePeriod.slice(0,4);
-    return { id, unit:h.unit, targetYear:h.annualPlans[year], targetPeriod:p.planYtd, month:p.actual, ytd:p.ytd, status:statusFor(toneFor(h,p)) };
+    const targetYear = h.annualPlans?.[year] ?? 0;
+    return { id, unit:h.unit, targetYear, targetPeriod:p.planYtd ?? targetYear, month:p.actual, ytd:p.ytd ?? p.actual, status:statusFor(toneFor(h,p)) };
   });
-  const incidentMonth = Math.max(1, Math.round(get('KT_SC').actual));
+  const incidentPoint = get('KT_SC');
+  const incidentMonth = Math.max(1, Math.round(incidentPoint.actual));
+  const incidentYtd = incidentPoint.ytd ?? incidentPoint.actual;
   const shares = [34,24,18,14,10];
   const labels = ['Sét','Động vật','Cây','Hư VTTB','Khác'];
-  const incidentCauses = labels.map((label,i)=>({ label, monthValue:Math.round(incidentMonth*shares[i]/100), monthShare:shares[i], ytdValue:Math.round(get('KT_SC').ytd*shares[i]/100), ytdShare:shares[i] }));
+  const incidentCauses = labels.map((label,i)=>{
+    const share = shares[i] ?? 0;
+    return { label, monthValue:Math.round(incidentMonth*share/100), monthShare:share, ytdValue:Math.round(incidentYtd*share/100), ytdShare:share };
+  });
   const status = nextPeriodText(safePeriod);
   const plans = [
     { id:'P1', owner:'Đội QLHTĐĐ', title:'Rà soát điểm đo và nâng tỷ lệ kết nối/khai thác đo xa.', status },

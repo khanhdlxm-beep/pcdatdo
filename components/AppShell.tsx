@@ -463,7 +463,7 @@ function HistoryChart({ data, kpiId, mode }: { data: DashboardBootstrap; kpiId: 
   const currentPoint = points[currentIndex];
   const currentValue = numericValue(currentPoint?.actual);
   const currentX = x(currentIndex);
-  const currentY = Number.isFinite(currentValue) ? y(currentValue) : 0;
+  const currentY = currentValue === undefined ? 0 : y(currentValue);
   const tooltipWidth = 112;
   const tooltipX = Math.max(5, Math.min(360 - tooltipWidth - 5, currentX - tooltipWidth / 2));
   const tooltipY = Math.max(5, currentY - 31);
@@ -479,7 +479,7 @@ function HistoryChart({ data, kpiId, mode }: { data: DashboardBootstrap; kpiId: 
         {mode === 'same' && <path d={samePath} className="chartSame" />}
         <path d={actualPath} className="chartActual" />
         {mode === 'forecast' && forecast && <path d={forecastPath} className="chartForecast" />}
-        {Number.isFinite(currentValue) && (
+        {currentValue !== undefined && Number.isFinite(currentValue) && (
           <g className="chartCurrentAnchor">
             <line x1={currentX} y1={currentY} x2={currentX} y2="116" className="chartCurrentGuide" />
             <circle cx={currentX} cy={currentY} r="5" className="chartAnchor" />
@@ -643,14 +643,21 @@ function ForecastPanel({ data, kpiId }: { data: DashboardBootstrap; kpiId: strin
   if (!history) return <div className="lockedPanel"><span>⌁</span><b>Chưa có dữ liệu lịch sử</b></div>;
   const forecast = forecastFor(history, data.period);
   if (!forecast) return <div className="lockedPanel"><span>⌁</span><b>Chưa đủ dữ liệu để dự báo</b><p>Cần tối thiểu 6 kỳ liên tiếp.</p></div>;
-  const directionGood = history.direction === 'lower' ? forecast.yearEnd <= forecast.annualPlan : history.direction === 'higher' ? forecast.yearEnd >= forecast.annualPlan : true;
+  const annualPlan = forecast.annualPlan;
+  const directionGood = annualPlan === undefined
+    ? undefined
+    : history.direction === 'lower'
+      ? forecast.yearEnd <= annualPlan
+      : history.direction === 'higher'
+        ? forecast.yearEnd >= annualPlan
+        : true;
   return (
     <>
       <HistoryChart data={data} kpiId={kpiId} mode="forecast" />
       <div className="forecastStats">
         <div><small>Tháng kế tiếp</small><b>{metricFormat(history, forecast.nextMonth)}</b></div>
         <div><small>Dự báo cuối năm</small><b>{metricFormat(history, forecast.yearEnd)}</b></div>
-        <div className={directionGood ? 'good' : 'risk'}><small>Khả năng đạt KH</small><b>{directionGood ? 'Có khả năng đạt' : 'Có nguy cơ không đạt'}</b><em>Độ tin cậy: {forecast.confidence}</em></div>
+        <div className={directionGood === undefined ? 'neutral' : directionGood ? 'good' : 'risk'}><small>Khả năng đạt KH</small><b>{directionGood === undefined ? 'Chưa có KH năm' : directionGood ? 'Có khả năng đạt' : 'Có nguy cơ không đạt'}</b><em>Độ tin cậy: {forecast.confidence}</em></div>
       </div>
       <p className="forecastNote">Dự báo DEMO dùng xu hướng tuyến tính 6 kỳ gần nhất để kiểm thử giao diện; không phải số liệu chính thức.</p>
     </>
