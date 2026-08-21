@@ -1,6 +1,6 @@
 {
-  "name": "dieu-hanh-sxkd-hybrid-v1-5-3",
-  "version": "1.7.3",
+  "name": "dieu-hanh-sxkd-v1-8-0",
+  "version": "1.8.0",
   "private": true,
   "engines": {
     "node": ">=20.9.0"

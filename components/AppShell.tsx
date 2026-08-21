@@ -1,12 +1,26 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import dynamic from 'next/dynamic';
 import type { ReactNode } from 'react';
 import type { DashboardBootstrap, FieldGroup, KpiCard, MetricHistory, MetricHistoryPoint, Tone } from '@/types/dashboard';
+import type { ActionItem, HealthModel } from '@/types/intelligence';
 import type { WeatherBundle } from '@/types/weather';
 import { buildOperationsAdvice, weatherAdviceForKpi } from '@/lib/weather-advisor';
+import { buildHealthModel } from '@/lib/health-score';
+import { buildEarlyWarnings } from '@/lib/forecast-v2';
+import { buildExecutiveBrief } from '@/lib/executive-brief';
+import { mergeActionState, seedActions } from '@/lib/action-engine';
+import HealthScoreCard from '@/components/dashboard/HealthScoreCard';
+import FavoriteKpiStrip from '@/components/dashboard/FavoriteKpiStrip';
+import ActionCenter from '@/components/actions/ActionCenter';
 
-type MainTab = 'home' | 'alerts' | 'plans';
+const AiCommandCenter = dynamic(() => import('@/components/ai/AiCommandCenter'), {
+  ssr: false,
+  loading: () => <div className="aiLazyLoading"><span className="loader"/><b>Đang mở AI Điều hành…</b></div>,
+});
+
+type MainTab = 'home' | 'alerts' | 'ai' | 'plans';
 type ViewState =
   | { kind: 'root' }
   | { kind: 'domain'; domainId: string }
@@ -17,11 +31,12 @@ type SheetState =
   | { kind: 'source' }
   | { kind: 'search' }
   | { kind: 'alert'; alertId: string }
-  | { kind: 'plan'; planId: string }
   | { kind: 'advice'; domainId: string; kpiId: string }
   | { kind: 'kpi-plan'; domainId: string; kpiId: string }
   | { kind: 'weather' }
-  | { kind: 'compare' };
+  | { kind: 'compare' }
+  | { kind: 'health' }
+  | { kind: 'action'; actionId: string };
 
 type KpiPresentation = {
   primaryValue?: string;
@@ -57,6 +72,7 @@ const DEFAULT_COMPARE:ComparisonSelection = {
 const navTabs: { id: MainTab; label: string; icon: string }[] = [
   { id: 'home', label: 'Trang chủ', icon: '⌂' },
   { id: 'alerts', label: 'Cảnh báo', icon: '△' },
+  { id: 'ai', label: 'AI', icon: '✦' },
   { id: 'plans', label: 'Kế hoạch', icon: '▣' },
 ];
 
@@ -955,13 +971,18 @@ function DomainTile({ field, favorite, toggleFavorite, open, alertCount, alertTo
   );
 }
 
-function HomeTab({ data, favoriteDomains, toggleDomainFavorite, openDomain, openSearch, goAlerts }: {
+function HomeTab({ data, favoriteDomains, favoriteKpis, health, earlyWarnings, toggleDomainFavorite, openDomain, openKpi, openSearch, goAlerts, openHealth }: {
   data: DashboardBootstrap;
   favoriteDomains: string[];
+  favoriteKpis: string[];
+  health: HealthModel;
+  earlyWarnings: ReturnType<typeof buildEarlyWarnings>;
   toggleDomainFavorite: (id: string) => void;
   openDomain: (id: string) => void;
+  openKpi: (domainId:string,kpiId:string)=>void;
   openSearch: () => void;
   goAlerts: () => void;
+  openHealth: () => void;
 }) {
   const homeModel = useMemo(() => {
     const alertMap = new Map<string, { count: number; tone: 'danger' | 'warning' | 'none' }>();
@@ -986,6 +1007,7 @@ function HomeTab({ data, favoriteDomains, toggleDomainFavorite, openDomain, open
   const activeAlerts = homeModel.activeAlerts;
   return (
     <>
+      <HealthScoreCard model={health} onOpen={openHealth} />
       <section className="executivePulse" aria-label="Nhịp điều hành">
         <div><small>Nhịp điều hành</small><b>Xu hướng so tháng trước</b></div>
         <span className="improve">↑ {homeModel.pulse.improve} cải thiện</span>
@@ -997,6 +1019,8 @@ function HomeTab({ data, favoriteDomains, toggleDomainFavorite, openDomain, open
         <div><b>{activeAlerts} vấn đề cần chú ý</b><small>Chạm để xem cảnh báo tháng hiện tại</small></div>
         <i>›</i>
       </button>
+      {earlyWarnings.length > 0 && <button className="earlyWarningShortcut" onClick={goAlerts}><span>🔮</span><div><b>{earlyWarnings.length} KPI có nguy cơ sớm</b><small>{earlyWarnings[0]?.label}: {earlyWarnings[0]?.forecastText}</small></div><i>›</i></button>}
+      <FavoriteKpiStrip data={data} favoriteKpis={favoriteKpis} health={health} openKpi={openKpi} />
       <div className="sectionHeading compact">
         <div><b>Lĩnh vực</b><small>Chọn lĩnh vực để xem KPI tháng hiện tại</small></div>
         <button className="searchIcon" onClick={openSearch} aria-label="Tìm kiếm">⌕</button>
@@ -1156,7 +1180,7 @@ function KpiDetail({ data, domainId, kpiId, favoriteKpis, toggleKpiFavorite, bac
   );
 }
 
-function AlertsTab({ data, openAlert }: { data: DashboardBootstrap; openAlert: (id: string) => void }) {
+function AlertsTab({ data, earlyWarnings, openAlert, openKpi }: { data: DashboardBootstrap; earlyWarnings: ReturnType<typeof buildEarlyWarnings>; openAlert: (id: string) => void; openKpi:(domainId:string,kpiId:string)=>void }) {
   const [filter, setFilter] = useState<'all' | 'red' | 'yellow' | 'data'>('all');
   const red = data.alerts.filter((x) => x.severity === 'red').length;
   const yellow = data.alerts.filter((x) => x.severity === 'yellow').length;
@@ -1169,6 +1193,7 @@ function AlertsTab({ data, openAlert }: { data: DashboardBootstrap; openAlert: (
         <span className="warning"><b>{yellow}</b><small>Theo dõi</small></span>
         <span><b>{data.conflicts.length}</b><small>Sai khác dữ liệu</small></span>
       </section>
+      {earlyWarnings.length > 0 && <section className="earlyWarningSection"><div className="sectionHeading compact"><div><b>🔮 Cảnh báo sớm</b><small>KPI có nguy cơ theo Forecast dù hiện tại có thể vẫn đạt</small></div></div><div className="earlyWarningRail">{earlyWarnings.slice(0,6).map((warning)=><button key={warning.id} className={`earlyWarningCard ${warning.risk}`} onClick={()=>openKpi(warning.domainId,warning.kpiId)}><span>{warning.risk==='high'?'Nguy cơ cao':warning.risk==='medium'?'Theo dõi':'Thấp'}</span><b>{warning.label}</b><p>{warning.forecastText}</p><small>{warning.reason}</small></button>)}</div></section>}
       <div className="pillTabs">
         <button className={filter === 'all' ? 'active' : ''} onClick={() => setFilter('all')}>Tất cả</button>
         <button className={filter === 'red' ? 'active' : ''} onClick={() => setFilter('red')}>Đỏ</button>
@@ -1177,16 +1202,6 @@ function AlertsTab({ data, openAlert }: { data: DashboardBootstrap; openAlert: (
       </div>
       {filter !== 'data' && <div className="alertListCompact">{visible.map((alert) => <button key={alert.id} className={`alertRow ${alert.severity}`} onClick={() => openAlert(alert.id)}><span>!</span><div><small>{alert.domain}</small><b>{alert.title}</b><em>{alert.current}</em></div><i>›</i></button>)}</div>}
       {(filter === 'all' || filter === 'data') && <section className="conflictCompact"><div className="sectionHeading"><div><b>Sai khác dữ liệu nguồn</b><small>Cần xác nhận trước khi ghi DB chính</small></div></div>{data.conflicts.map((c) => <article key={c.id}><b>{c.label}</b><p><span>{c.valueA}</span><i>≠</i><span>{c.valueB}</span></p><small>{c.recommendation}</small></article>)}</section>}
-    </>
-  );
-}
-
-function PlansTab({ data, customPlans, removeCustom, openPlan }: { data: DashboardBootstrap; customPlans: CustomPlan[]; removeCustom: (id: string) => void; openPlan: (id: string) => void }) {
-  return (
-    <>
-      <div className="pageTitle"><div><small>Điều hành</small><h2>Kế hoạch</h2></div><span>{nextPeriodLabel(data.period)}</span></div>
-      {customPlans.length > 0 && <section className="planGroup"><div className="sectionHeading"><div><b>Từ tư vấn / người dùng</b><small>Đã lưu trên thiết bị này</small></div></div>{customPlans.map((plan) => <article className="planRow custom" key={plan.id}><div><small>{plan.owner} · {plan.sourceKpi}</small><b>{plan.title}</b></div><button onClick={() => removeCustom(plan.id)}>×</button></article>)}</section>}
-      <section className="planGroup"><div className="sectionHeading"><div><b>{data.dataMode === 'demo' ? 'Giải pháp DEMO' : 'Giải pháp theo báo cáo'}</b><small>{data.plans.length} nhóm việc</small></div></div>{data.plans.map((plan, i) => <button className="planRow" key={plan.id} onClick={() => openPlan(plan.id)}><em>{String(i + 1).padStart(2, '0')}</em><div><small>{plan.owner}</small><b>{plan.title}</b><span>{plan.status}</span></div><i>›</i></button>)}</section>
     </>
   );
 }
@@ -1259,6 +1274,7 @@ export default function AppShell() {
   const [periodLoading, setPeriodLoading] = useState(false);
   const [weather, setWeather] = useState<WeatherBundle | null>(null);
   const [comparison, setComparison] = useState<ComparisonSelection>(DEFAULT_COMPARE);
+  const [actions, setActions] = useState<ActionItem[]>([]);
 
   const fetchDashboard = async (period?: string) => {
     setPeriodLoading(true);
@@ -1286,6 +1302,27 @@ export default function AppShell() {
     } catch { /* ignore malformed local data */ }
   }, []);
 
+  const healthModel = useMemo(() => data ? buildHealthModel(data) : null, [data]);
+  const earlyWarnings = useMemo(() => data ? buildEarlyWarnings(data) : [], [data]);
+
+  useEffect(() => {
+    if (!data) return;
+    const seed = seedActions(data, customPlans, earlyWarnings);
+    let stored: ActionItem[] = [];
+    try { stored = JSON.parse(localStorage.getItem('sxkd:actions:v1') || '[]'); } catch { stored = []; }
+    const next = mergeActionState(seed, stored);
+    setActions(next);
+    try { localStorage.setItem('sxkd:actions:v1', JSON.stringify(next)); } catch {}
+  }, [data, customPlans, earlyWarnings]);
+
+  const updateAction = (id:string, patch:Partial<ActionItem>) => setActions((prev) => {
+    const next = prev.map((action) => action.id === id ? { ...action, ...patch, updatedAt:new Date().toISOString() } : action);
+    try { localStorage.setItem('sxkd:actions:v1', JSON.stringify(next)); } catch {}
+    return next;
+  });
+
+  const executiveBrief = useMemo(() => data && healthModel ? buildExecutiveBrief(data, healthModel, earlyWarnings, actions) : null, [data, healthModel, earlyWarnings, actions]);
+
   const saveList = (key: string, values: string[]) => { try { localStorage.setItem(key, JSON.stringify(values)); } catch {} };
   const toggleDomainFavorite = (id: string) => setFavoriteDomains((prev) => { const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]; saveList('sxkd:favDomains', next); return next; });
   const toggleKpiFavorite = (id: string) => setFavoriteKpis((prev) => { const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]; saveList('sxkd:favKpis', next); return next; });
@@ -1302,7 +1339,6 @@ export default function AppShell() {
       return next;
     });
   };
-  const removeCustom = (id: string) => setCustomPlans((prev) => { const next = prev.filter((x) => x.id !== id); try { localStorage.setItem('sxkd:customPlans', JSON.stringify(next)); } catch {} return next; });
   const changePeriod = async (period: string) => {
     if (!data || period === data.period) return;
     setSheet(null);
@@ -1329,16 +1365,27 @@ export default function AppShell() {
   } else if (view.kind === 'domain') {
     content = <DomainDetail data={data} domainId={view.domainId} favoriteKpis={favoriteKpis} toggleKpiFavorite={toggleKpiFavorite} back={() => setView({ kind: 'root' })} openKpi={(d, k) => openKpi(d, k, 'domain')} />;
   } else if (tab === 'home') {
-    content = <HomeTab data={data} favoriteDomains={favoriteDomains} toggleDomainFavorite={toggleDomainFavorite} openDomain={openDomain} openSearch={() => setSheet({ kind: 'search' })} goAlerts={() => switchTab('alerts')} />;
+    content = <HomeTab data={data} favoriteDomains={favoriteDomains} favoriteKpis={favoriteKpis} health={healthModel!} earlyWarnings={earlyWarnings} toggleDomainFavorite={toggleDomainFavorite} openDomain={openDomain} openKpi={(d,k)=>openKpi(d,k,'domain')} openSearch={() => setSheet({ kind: 'search' })} goAlerts={() => switchTab('alerts')} openHealth={()=>setSheet({kind:'health'})} />;
   } else if (tab === 'alerts') {
-    content = <AlertsTab data={data} openAlert={(id) => setSheet({ kind: 'alert', alertId: id })} />;
+    content = <AlertsTab data={data} earlyWarnings={earlyWarnings} openAlert={(id) => setSheet({ kind: 'alert', alertId: id })} openKpi={(d,k)=>openKpi(d,k,'alerts')} />;
+  } else if (tab === 'ai') {
+    content = <AiCommandCenter data={data} health={healthModel!} warnings={earlyWarnings} actions={actions} brief={executiveBrief!} weather={weather} goAlerts={()=>switchTab('alerts')} goPlans={()=>switchTab('plans')} />;
   } else {
-    content = <PlansTab data={data} customPlans={customPlans} removeCustom={removeCustom} openPlan={(id) => setSheet({ kind: 'plan', planId: id })} />;
+    content = <ActionCenter actions={actions} updateAction={updateAction} openAction={(id)=>setSheet({kind:'action',actionId:id})} />;
   }
 
   let sheetContent: ReactNode = null;
   let sheetTitle = '';
-  if (sheet?.kind === 'source') {
+  if (sheet?.kind === 'health') {
+    sheetTitle = 'Sức khỏe SXKD';
+    sheetContent = <div className="healthSheet"><div className={`healthSheetHero ${healthModel?.band ?? 'good'}`}><small>Điểm sức khỏe toàn đơn vị</small><b>{healthModel?.overall.toLocaleString('vi-VN',{maximumFractionDigits:1}) ?? '—'}<em>/100</em></b><span>Điểm tổng hợp từ tiến độ kế hoạch, xu hướng, cùng kỳ, forecast và độ ổn định.</span></div><div className="healthDomainList">{healthModel?.domains.slice().sort((a,b)=>a.score-b.score).map((domain)=><button key={domain.domainId} onClick={()=>{setSheet(null);openDomain(domain.domainId)}}><div><b>{domain.title}</b><small>{domain.kpis.filter((kpi)=>kpi.band==='risk'||kpi.band==='watch').length} KPI cần theo dõi</small></div><strong>{domain.score.toLocaleString('vi-VN',{maximumFractionDigits:1})}</strong><i>›</i></button>)}</div></div>;
+  } else if (sheet?.kind === 'action') {
+    const action=actions.find((row)=>row.id===sheet.actionId);
+    if(action){
+      sheetTitle='Chi tiết hành động';
+      sheetContent=<div className="actionSheet"><div className="actionSheetHero"><span className={`actionPriority ${action.priority}`}>{action.priority==='high'?'Cao':action.priority==='medium'?'Trung bình':'Bình thường'}</span><h3>{action.title}</h3><p>{action.owner}{action.sourceKpiLabel?` · KPI ${action.sourceKpiLabel}`:''}</p></div><div className="actionSheetGrid"><div><small>Trạng thái</small><b>{action.status==='done'?'Hoàn thành':action.status==='overdue'?'Quá hạn':action.status==='doing'?'Đang làm':'Mới'}</b></div><div><small>Tiến độ</small><b>{action.progress}%</b></div><div><small>Thời hạn</small><b>{action.dueDate??'Chưa đặt'}</b></div><div><small>Nguồn</small><b>{action.source}</b></div></div><section><b>Mục tiêu</b><p>{action.objective}</p></section><section><b>Nội dung thực hiện</b><ol>{action.steps.map((step)=><li key={step}>{step}</li>)}</ol></section><section><b>Kết quả mong đợi</b><p>{action.expectedResult}</p></section>{action.measure&&<section><b>Tiêu chí theo dõi</b><p>{action.measure}</p></section>}<div className="actionSheetButtons"><button onClick={()=>updateAction(action.id,{status:'doing',progress:Math.max(action.progress,55)})}>Đang thực hiện</button><button className="done" onClick={()=>updateAction(action.id,{status:'done',progress:100})}>✓ Hoàn thành</button></div></div>;
+    }
+  } else if (sheet?.kind === 'source') {
     sheetTitle = 'Nguồn dữ liệu';
     sheetContent = <div className="sourceSheet"><p><b>{data.sourceLabel}</b></p>{data.dataMode === 'demo' && <div className="demoWarning">⚠ Dữ liệu giả lập chỉ để test giao diện, tốc độ, so sánh và Forecast.</div>}<dl><div><dt>Kỳ báo cáo</dt><dd>{periodLabel(data.period)}</dd></div><div><dt>Dữ liệu đến</dt><dd>{data.reportingDate}</dd></div><div><dt>Chế độ</dt><dd>{data.dataMode === 'demo' ? 'DEMO giả lập 2025–2026' : data.dataMode === 'pdf-seed' ? 'Dữ liệu PDF mẫu' : 'Apps Script API'}</dd></div></dl><button className="sheetPrimary" onClick={() => downloadSnapshot(data)}>⇩ Xuất snapshot dữ liệu</button></div>;
   } else if (sheet?.kind === 'weather') {
@@ -1356,31 +1403,6 @@ export default function AppShell() {
       const target = alert.domainId ? { domainId: alert.domainId, kpiId: alert.kpiId } : alertToKpi[alert.id];
       sheetTitle = 'Chi tiết cảnh báo';
       sheetContent = <div className="alertSheet"><span className={`severityBadge ${alert.severity}`}>{alert.severity === 'red' ? 'Ưu tiên' : 'Theo dõi'}</span><h3>{alert.title}</h3><div className="sheetMetric"><small>Hiện tại</small><b>{alert.current}</b></div>{alert.target && <div className="sheetMetric"><small>Kế hoạch / ngưỡng</small><b>{alert.target}</b></div>}<p>{alert.note}</p>{target && <button className="sheetPrimary" onClick={() => { setSheet(null); target.kpiId ? openKpi(target.domainId, target.kpiId, 'alerts') : openDomain(target.domainId); }}>Xem phân tích đầy đủ</button>}</div>;
-    }
-  } else if (sheet?.kind === 'plan') {
-    const plan = data.plans.find((p) => p.id === sheet.planId);
-    if (plan) {
-      const objective = plan.objective ?? `Bảo đảm tiến độ ${plan.title.toLowerCase()} và hạn chế phát sinh chỉ tiêu không đạt.`;
-      const actions = plan.actions?.length ? plan.actions : [plan.title, 'Theo dõi tiến độ theo tuần và cập nhật các vướng mắc.', 'Đánh giá kết quả cuối kỳ và đề xuất điều chỉnh khi cần.'];
-      const expectedResult = plan.expectedResult ?? 'Hoàn thành đúng tiến độ, có số liệu xác nhận và không phát sinh tồn đọng kéo dài.';
-      sheetTitle = 'Chi tiết giải pháp';
-      sheetContent = (
-        <div className="planSheet planSheetDetailed">
-          <span className="sourceBadge">{data.dataMode === 'demo' ? 'DEMO' : 'Theo báo cáo'}</span>
-          <h3>{plan.title}</h3>
-          <div className="planMetaGrid">
-            <div><small>Đơn vị phụ trách</small><b>{plan.owner}</b></div>
-            <div><small>Trạng thái</small><b>{plan.status}</b></div>
-            <div><small>Mức ưu tiên</small><b>{plan.priority ?? 'Theo dõi'}</b></div>
-            <div><small>Thời hạn</small><b>{plan.deadline ?? nextPeriodLabel(data.period)}</b></div>
-          </div>
-          <section><b>Mục tiêu</b><p>{objective}</p></section>
-          <section><b>Nội dung thực hiện</b><ol>{actions.map((text) => <li key={text}>{text}</li>)}</ol></section>
-          <section><b>Kết quả mong đợi</b><p>{expectedResult}</p></section>
-          {plan.measure && <section><b>Tiêu chí theo dõi</b><p>{plan.measure}</p></section>}
-          {plan.note && <section><b>Ghi chú</b><p>{plan.note}</p></section>}
-        </div>
-      );
     }
   } else if (sheet?.kind === 'kpi-plan') {
     const field = data.fields.find((x) => x.id === sheet.domainId);
@@ -1419,7 +1441,7 @@ export default function AppShell() {
       {view.kind === 'root' && tab === 'home' && <SummaryCompact data={data} />}
       <div className="contentV15">{content}</div>
       <nav className="bottomNavV15">
-        {navTabs.map((item) => <button key={item.id} className={tab === item.id && view.kind === 'root' ? 'active' : ''} onClick={() => switchTab(item.id)}><span>{item.icon}</span><small>{item.label}</small>{item.id === 'alerts' && <i>{data.summary.fail + data.summary.partial}</i>}</button>)}
+        {navTabs.map((item) => <button key={item.id} className={tab === item.id && view.kind === 'root' ? 'active' : ''} onClick={() => switchTab(item.id)}><span>{item.icon}</span><small>{item.label}</small>{item.id === 'alerts' && <i>{data.summary.fail + data.summary.partial + earlyWarnings.filter((row)=>row.risk!=='low').length}</i>}{item.id === 'ai' && earlyWarnings.some((row)=>row.risk==='high') && <i className="aiNavDot">!</i>}</button>)}
       </nav>
       {sheet && <BottomSheet title={sheetTitle} onClose={() => setSheet(null)}>{sheetContent}</BottomSheet>}
     </main>
