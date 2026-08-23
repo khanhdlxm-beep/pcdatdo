@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { bearerToken, verifyPdfAdminToken } from '@/lib/pdf-admin-auth';
 import { pdfBackendGet } from '@/lib/pdf-backend';
 import { parsePdfDocuments } from '@/lib/pdf-parser';
+import { applyRealBusinessPdfOverrides } from '@/lib/pdf-real-business';
 import type { PdfExtractedDocument } from '@/types/pdf-import';
 
 export const dynamic='force-dynamic';
@@ -14,5 +15,7 @@ export async function POST(request:NextRequest){
   if(!Array.isArray(documents)||!documents.length) return NextResponse.json({ok:false,error:'Chưa có dữ liệu PDF.'},{status:400});
   const rulesResult=await pdfBackendGet('pdfRules').catch(()=>({ok:false,rules:[]}));
   const rules=Array.isArray((rulesResult as any)?.rules)?(rulesResult as any).rules:[];
-  return NextResponse.json(parsePdfDocuments(period,documents,rules),{headers:{'Cache-Control':'no-store'}});
+  const parsed=parsePdfDocuments(period,documents,rules);
+  const enriched=applyRealBusinessPdfOverrides(parsed,documents);
+  return NextResponse.json(enriched,{headers:{'Cache-Control':'no-store'}});
 }
