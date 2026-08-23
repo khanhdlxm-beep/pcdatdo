@@ -76,6 +76,63 @@ export type ActionItem = {
   updatedAt: string;
 };
 
+export type AiKpiSnapshot = {
+  kpiId: string;
+  domainId: string;
+  domainTitle: string;
+  label: string;
+  value: string;
+  status: string;
+  tone: string;
+  detail?: string;
+  planText?: string;
+
+  healthScore?: number;
+  healthBand?: HealthBand;
+  healthTrend?: KpiHealth['trend'];
+  planScore?: number;
+  trendScore?: number;
+  samePeriodScore?: number;
+  forecastScore?: number;
+  stabilityScore?: number;
+
+  unit?: string;
+  direction?: 'higher' | 'lower' | 'info';
+  actual?: number;
+  planMonth?: number;
+  monthPlanRatio?: number;
+  ytd?: number;
+  planYtd?: number;
+  ytdPlanRatio?: number;
+  annualPlan?: number;
+  annualProgressRatio?: number;
+  previousActual?: number;
+  previousChange?: number;
+  samePeriodActual?: number;
+  samePeriodChange?: number;
+
+  warningRisk?: RiskLevel;
+  warningReason?: string;
+  forecastText?: string;
+  projectedRatio?: number;
+  projectedValue?: number;
+
+  openActionCount: number;
+};
+
+export type AiRuntimeIndex = {
+  period: string;
+  totalKpis: number;
+  overallHealth: number;
+  healthBand: HealthBand;
+  healthDelta: number | null;
+  kpis: AiKpiSnapshot[];
+  domains: DomainHealth[];
+  warnings: EarlyWarning[];
+  actions: ActionItem[];
+  brief: ExecutiveBrief;
+};
+
 export type AiAnswer = {
   title: string;
   summary: string;

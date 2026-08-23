@@ -77,8 +77,8 @@ const navTabs: { id: MainTab; label: string; icon: string }[] = [
 ];
 
 const domainMeta: Record<string, { icon: string; subtitle: string }> = {
-  'kinh-doanh': { icon: '↗', subtitle: 'Điện TP · Doanh thu · Giá bán · Tổn thất' },
-  dvkh: { icon: '◌', subtitle: 'CRM · HĐMBĐ · Tiếp cận điện' },
+  'kinh-doanh': { icon: '↗', subtitle: 'Điện TP · Điện nhận · Doanh thu · Giá mua/bán · Tổn thất · Thu ngân' },
+  dvkh: { icon: '◌', subtitle: 'CRM · HĐMBĐ · Chuyển chủ · Tiếp cận điện' },
   'do-xa': { icon: '⌁', subtitle: 'Khai báo · Kết nối · Hóa đơn' },
   'ky-thuat': { icon: '⚙', subtitle: 'Sự cố · SAIFI · SAIDI · MAIFI' },
   'dau-tu-tai-chinh': { icon: '▥', subtitle: 'ĐTXD · SCL · Tồn kho · Chi phí' },
@@ -105,42 +105,259 @@ function DomainIllustration({ id }: { id: string }) {
     <svg viewBox="0 0 120 120" aria-hidden="true"><circle cx="43" cy="42" r="15"/><circle cx="80" cy="47" r="12"/><path d="M18 97c3-24 13-37 25-37s23 13 26 37M63 97c2-19 9-30 20-30 8 0 15 7 19 20"/><path d="M49 22h30v20H49zM54 27h20M54 33h14"/></svg>
   );
 }
+const businessSupplementalKpis: KpiCard[] = [
+  {
+    id: 'KD_DIENNHAN',
+    label: 'Điện nhận',
+    value: '169,975 Tr.kWh',
+    tone: 'good',
+    status: 'Đạt',
+    detail: 'Lũy kế đến hết 7/2026: 1.074,473 Tr.kWh.',
+    plan: 'Bảng chỉ tiêu chính không thể hiện kế hoạch năm cho chỉ tiêu này.',
+  },
+  {
+    id: 'KD_COCADIENMUA',
+    label: 'Cơ cấu điện mua',
+    value: '100 (theo báo cáo)',
+    tone: 'good',
+    status: 'Đạt',
+    detail: 'Cao điểm: 29,29 Tr.kWh tháng / 180,85 Tr.kWh lũy kế; thấp điểm: 39,27 / 246,95; bình thường: 86,81 / 531,14.',
+    plan: 'Chỉ tiêu tổng hợp không ghi ĐVT trong PDF; các thành phần dùng Tr.kWh.',
+  },
+  {
+    id: 'KD_DBPT',
+    label: 'Dự báo phụ tải (điện thương phẩm)',
+    value: 'Tổng TP: 0,8% tháng · 5,99% lũy kế',
+    tone: 'warn',
+    status: 'Đạt một phần',
+    detail: 'Nhóm trên 1 triệu: 5,18% tháng và 7,7% lũy kế - Không đạt. Tổng thương phẩm: 0,8% tháng và 5,99% lũy kế - Đạt.',
+    plan: 'Kết quả dự báo 2026 theo báo cáo tháng 8/2026.',
+  },
+  {
+    id: 'KD_GIAMUA',
+    label: 'Giá mua điện bình quân',
+    value: '1.819,17 đ/kWh',
+    tone: 'bad',
+    status: 'Không đạt',
+    detail: 'Lũy kế: 1.805,01 đ/kWh; KH 2026: 1.792,01 đ/kWh. Bảng chỉ tiêu chính ghi K Đạt; phần tổng hợp cuối báo cáo không liệt kê riêng chỉ tiêu này trong danh sách chưa đạt.',
+    plan: 'KH 2026: 1.792,01 đ/kWh.',
+  },
+  {
+    id: 'KD_CONGTO',
+    label: 'Thay / bảo trì công tơ',
+    value: 'Luật ĐL: 3.412/12.422 · Điều phối: 5.611/37.196',
+    tone: 'bad',
+    status: 'Không đạt',
+    detail: 'Bảo trì theo Luật Đo lường: 3.412/12.422 cái; bảo trì điều phối: 5.611/37.196 cái. Đến 31/7: thay bảo trì 2.910/11.298 công tơ 1 pha và 502/1.444 công tơ 3 pha.',
+    plan: 'Đẩy nhanh bảo trì TBĐĐ và SCL hệ thống đo đếm năm 2026.',
+  },
+  {
+    id: 'KD_VIPHAM',
+    label: 'Kiểm tra xử lý vi phạm sử dụng điện',
+    value: '3.752 kWh lũy kế',
+    tone: 'bad',
+    status: 'Không đạt',
+    detail: 'Kế hoạch 2026: 90.000 kWh; thực hiện lũy kế: 3.752 kWh. Bảng báo cáo thể hiện mức so kế hoạch là 4,1.',
+    plan: 'KH 2026: 90.000 kWh.',
+  },
+  {
+    id: 'KD_TKIEM',
+    label: 'Tiết kiệm điện',
+    value: '16,52 Tr.kWh',
+    tone: 'good',
+    status: 'Đạt',
+    detail: 'Lũy kế: 74,40 Tr.kWh; kế hoạch 2026: 40,87 Tr.kWh; báo cáo ghi đạt 180% kế hoạch.',
+    plan: 'KH 2026: 40,87 Tr.kWh.',
+  },
+  {
+    id: 'KD_THUNGAN',
+    label: 'Công tác quản lý thu ngân',
+    value: 'Thu tiền điện 99,90%',
+    tone: 'good',
+    status: 'Đạt',
+    detail: 'Lũy kế thu tiền điện 99,98%; thu tiền điện theo phiên 92,32%; không dùng tiền mặt về khách hàng 100%.',
+    plan: 'KH 2026: thu tiền điện 99,7%; theo phiên 90,0%; không dùng tiền mặt 99,82%.',
+  },
+];
+
+const dvkhSupplementalKpis: KpiCard[] = [
+  {
+    id: 'DV_CHUYENCHU',
+    label: 'HĐMBĐ chuyển chủ thể',
+    value: 'SH 315 HĐ · NSH 1.817 HĐ',
+    tone: 'neutral',
+    status: 'Thông tin',
+    detail: 'Lũy kế: sinh hoạt 2.096 HĐ; ngoài sinh hoạt 5.860 HĐ.',
+    plan: 'PDF không thể hiện kế hoạch cho chỉ tiêu chuyển chủ thể.',
+  },
+];
+
+function supplementalKpisForDomain(domainId: string) {
+  if (domainId === 'kinh-doanh') return businessSupplementalKpis;
+  if (domainId === 'dvkh') return dvkhSupplementalKpis;
+  return [];
+}
+
+function supplementalKpiForDomain(domainId: string, kpiId: string) {
+  return supplementalKpisForDomain(domainId).find((item) => item.id === kpiId);
+}
+
+// Chỉ chuẩn hóa các ĐVT có căn cứ rõ trong PDF. Với chỉ tiêu tỷ lệ (%),
+// ký hiệu % vẫn dùng để format giá trị nhưng không hiển thị thành nhãn "Đơn vị: %".
+const kpiUnitOverrides: Record<string, string> = {
+  KD_DIENNHAN: 'Tr.kWh',
+  KD_DTP: 'Tr.kWh',
+  KD_DT: 'Tỷ đồng',
+  KD_GIA: 'đ/kWh',
+  KD_GIAMUA: 'đ/kWh',
+  KD_TT: '%',
+  KD_VIPHAM: 'kWh',
+  KD_TKIEM: 'Tr.kWh',
+  HDMBD: 'HĐ',
+  DV_CHUYENCHU: 'HĐ',
+  TC_DN: 'ngày',
+  DX_KB: '%',
+  DX_KN: '%',
+  DX_HD: '%',
+  KT_SC: 'Vụ',
+  SAIFI: 'lần',
+  SAIDI: 'phút',
+  MAIFI: 'lần',
+  DTXD: 'Tỷ đồng',
+  SCL: 'Tỷ đồng',
+  TONKHO: 'Tỷ đồng',
+  CHIPHI: 'đ/kWh',
+  CBCNV: 'Người',
+  DT_GIO: 'Giờ',
+  NSLD_KH: 'KH',
+};
+
+function historyForKpi(data: DashboardBootstrap, kpiId: string) {
+  const history = data.history?.[kpiId];
+  if (!history) return undefined;
+  const unit = kpiUnitOverrides[kpiId];
+  if (!unit || history.unit === unit) return history;
+  return { ...history, unit };
+}
+
+function chartDisplayUnit(history: MetricHistory) {
+  const unit = history.unit?.trim();
+  if (!unit || unit === '%') return null;
+  return unit;
+}
+
 const kpiPresentation: Record<string, KpiPresentation> = {
+  KD_DIENNHAN: {
+    primaryValue: '169,975 Tr.kWh',
+    primaryScope: 'Tháng 7/2026',
+    comparison: 'Đạt',
+    ytd: '1.074,473 Tr.kWh',
+    plan: 'PDF không ghi KH năm cho chỉ tiêu Điện nhận',
+    insight: ['Điện nhận tháng 7/2026 là 169,975 Tr.kWh.', 'Lũy kế đến hết tháng 7/2026 là 1.074,473 Tr.kWh.'],
+    advice: ['Theo dõi điện nhận cùng điện thương phẩm để nhận diện biến động cân bằng năng lượng.', 'Đối chiếu cơ cấu điện mua theo cao điểm, thấp điểm và bình thường.'],
+  },
+  KD_COCADIENMUA: {
+    primaryValue: '100 (theo báo cáo)',
+    primaryScope: 'Cơ cấu điện mua',
+    comparison: 'Đạt',
+    ytd: '100 (theo báo cáo)',
+    plan: 'Chỉ tiêu tổng hợp không ghi ĐVT',
+    insight: ['Cao điểm: 29,29 Tr.kWh tháng / 180,85 Tr.kWh lũy kế.', 'Thấp điểm: 39,27 / 246,95 Tr.kWh; bình thường: 86,81 / 531,14 Tr.kWh.'],
+    advice: ['Theo dõi chuyển dịch cơ cấu theo khung giờ để hỗ trợ điều hành mua điện.', 'Không tự gán % cho giá trị tổng 100 vì PDF để trống cột ĐVT.'],
+  },
+  KD_DBPT: {
+    primaryValue: 'Tổng TP: 0,8% tháng · 5,99% lũy kế',
+    primaryScope: 'Dự báo 2026 · báo cáo tháng 8/2026',
+    comparison: 'Đạt một phần',
+    ytd: 'Trên 1 triệu: 7,7% · Tổng thương phẩm: 5,99%',
+    plan: 'Theo kết quả dự báo 2026 trong báo cáo',
+    insight: [
+      'Nhóm khách hàng trên 1 triệu: tháng báo cáo 5,18%, lũy kế 7,7% - Không đạt.',
+      'Tổng điện thương phẩm: tháng báo cáo 0,8%, lũy kế 5,99% - Đạt.',
+    ],
+    advice: ['Theo dõi riêng sai số dự báo nhóm khách hàng trên 1 triệu.', 'Đối chiếu biến động phụ tải, cơ cấu khách hàng và thời tiết trước kỳ dự báo kế tiếp.'],
+  },
+  KD_CONGTO: {
+    primaryValue: 'Luật ĐL 3.412/12.422 · Điều phối 5.611/37.196',
+    primaryScope: 'Bảo trì TBĐĐ đến 31/7/2026',
+    comparison: 'Bảo trì TBĐĐ · Không đạt',
+    ytd: 'Luật Đo lường: 3.412 cái · Điều phối: 5.611 cái',
+    plan: 'KH: 12.422 cái theo Luật Đo lường · 37.196 cái điều phối',
+    insight: [
+      'Thay bảo trì công tơ 1 pha: 2.910/11.298; công tơ 3 pha: 502/1.444.',
+      'SCL đo đếm: TI hạ thế KH 538/615; TI-TU trung thế 186/420; TI hạ thế trạm công cộng 122/323.',
+    ],
+    advice: ['Đẩy nhanh thay bảo trì công tơ và SCL hệ thống đo đếm theo tiến độ giao.', 'Theo dõi đủ vật tư HTĐĐ để tránh chậm thay thế.'],
+  },
+  KD_THUNGAN: {
+    primaryValue: '99,90%',
+    primaryScope: 'Tỷ lệ thu tiền điện trong kỳ',
+    comparison: 'KH 99,7% · Đạt',
+    comparisonRatio: 100.2,
+    comparisonRelation: 'gte',
+    ytd: '99,98%',
+    plan: 'Thu tiền điện 99,7% · Theo phiên 90,0% · Không tiền mặt 99,82%',
+    insight: [
+      'Tỷ lệ thu tiền điện trong kỳ 99,90%, lũy kế 99,98%.',
+      'Thu tiền điện theo phiên 92,32%; tỷ lệ không dùng tiền mặt về khách hàng 100%.',
+    ],
+    advice: ['Duy trì tỷ lệ thu tiền điện và theo dõi các phiên có nguy cơ giảm tỷ lệ thu.', 'Tiếp tục duy trì tỷ lệ thanh toán không dùng tiền mặt ở mức hiện tại.'],
+  },
   KD_DTP: {
     primaryValue: '165,479 Tr.kWh', primaryScope: 'Tháng 7/2026', comparison: '123,11% KH tháng', comparisonRatio: 123.11, comparisonRelation: 'gte',
     ytd: '1.041,607 Tr.kWh', plan: 'KH năm 1.613 Tr.kWh',
-    insight: ['Thực hiện tháng 7 được báo cáo đạt 123,11% kế hoạch tháng.', 'Lũy kế đến hết tháng 7 đạt 64,54% kế hoạch năm.'],
+    insight: ['Thực hiện tháng 7 được báo cáo đạt 123,11% kế hoạch tháng; lũy kế đạt 64,54% kế hoạch năm.', 'Mua ĐMTMN: 14.604.254 kWh tháng / 115.503.775 kWh lũy kế; số tiền mua 30.747,83 Tr.đ tháng / 243.182,26 Tr.đ lũy kế.'],
     advice: ['Theo dõi sản lượng theo thành phần phụ tải để nhận biết nhóm tăng/giảm mạnh.', 'Ưu tiên so sánh tháng kế tiếp với KH tháng và cùng kỳ khi dữ liệu lịch sử được nạp đủ.'],
   },
   KD_DT: {
-    primaryValue: '376,54 tỷ', primaryScope: 'Tháng 7/2026', ytd: '2.361,42 tỷ', plan: 'KH năm 3.647,667 tỷ',
-    insight: ['Doanh thu tháng 7 là 376,54 tỷ đồng.', 'Lũy kế đạt 64,73% kế hoạch năm.'],
+    primaryValue: '376,54 tỷ đồng', primaryScope: 'Tháng 7/2026', ytd: '2.361,42 tỷ đồng', plan: 'KH năm 3.647,667 tỷ đồng',
+    insight: ['Doanh thu tháng 7 là 376,54 tỷ đồng; lũy kế 2.361,42 tỷ đồng, đạt 64,73% kế hoạch năm.', 'Trong đó doanh thu bán điện 376,05 tỷ đồng tháng / 2.358,86 tỷ đồng lũy kế; CSPK 0,49 / 3,56 tỷ đồng.'],
     advice: ['Theo dõi đồng thời điện thương phẩm, giá bán bình quân và doanh thu để nhận diện nguyên nhân biến động.', 'Khi có KH tháng chuẩn hóa, bổ sung cảnh báo sớm nếu doanh thu thực hiện thấp hơn tiến độ.'],
   },
   KD_GIA: {
-    primaryValue: '2.264,64 đ/kWh', primaryScope: 'Lũy kế/hiện trạng', comparison: 'Nguồn KH đang có sai khác', comparisonRelation: 'info', plan: 'BC tổng hợp: 2.259 đ/kWh',
-    insight: ['Hai PDF đang thể hiện kế hoạch giá bán điện bình quân khác nhau.', 'App không tự chọn một nguồn làm đúng khi chưa được xác nhận.'],
-    advice: ['Xác nhận nguồn kế hoạch ưu tiên trước khi dùng KPI này cho cảnh báo tự động.', 'Giữ lịch sử nguồn dữ liệu để truy vết khi hiệu chỉnh.'],
+    primaryValue: '2.272,52 đ/kWh', primaryScope: 'Tháng 7/2026', comparison: 'Đạt', comparisonRelation: 'info', ytd: '2.264,64 đ/kWh', plan: 'KH năm 2.259 đ/kWh',
+    insight: ['Giá bán điện bình quân tháng 7 là 2.272,52 đ/kWh; lũy kế 2.264,64 đ/kWh.', 'Bảng báo cáo ghi chênh +5,64 so KH 2026 và +16,52 so KH 7/2026.'],
+    advice: ['Theo dõi đồng thời giá bán, điện thương phẩm và cơ cấu khách hàng.', 'Giữ số liệu kế hoạch tháng/năm nhất quán để đánh giá chênh lệch chính xác.'],
+  },
+  KD_GIAMUA: {
+    primaryValue: '1.819,17 đ/kWh', primaryScope: 'Tháng 7/2026', comparison: 'K Đạt', comparisonRelation: 'lte', ytd: '1.805,01 đ/kWh', plan: 'KH năm 1.792,01 đ/kWh',
+    insight: ['Bảng chỉ tiêu chính ghi giá mua điện bình quân tháng 7 là 1.819,17 đ/kWh, lũy kế 1.805,01 đ/kWh.', 'Bảng ghi chênh +13 so KH 2026 và +27,16 so KH 7/2026; phần tổng hợp cuối báo cáo không liệt kê riêng chỉ tiêu này trong danh sách chưa đạt.'],
+    advice: ['Theo dõi chênh lệch giá mua với kế hoạch và cơ cấu điện mua theo khung giờ.', 'Giữ ghi chú nguồn vì báo cáo có khác biệt giữa bảng chỉ tiêu chính và phần tổng hợp.'],
+  },
+  KD_VIPHAM: {
+    primaryValue: '3.752 kWh', primaryScope: 'Lũy kế 7/2026', comparison: '4,1 theo báo cáo · K Đạt', comparisonRatio: 4.1, comparisonRelation: 'gte', ytd: '3.752 kWh', plan: 'KH năm 90.000 kWh',
+    insight: ['Kiểm tra xử lý vi phạm sử dụng điện lũy kế 3.752 kWh trên kế hoạch 90.000 kWh.', 'Phần tổng hợp cuối báo cáo xác định chỉ tiêu này Không đạt.'],
+    advice: ['Tăng cường kiểm tra nhóm khách hàng/rủi ro có khả năng vi phạm sử dụng điện.', 'Theo dõi đồng thời số biên bản, số kWh và số tiền truy thu.'],
+  },
+  KD_TKIEM: {
+    primaryValue: '16,52 Tr.kWh', primaryScope: 'Tháng 7/2026', comparison: '180% KH năm · Đạt', comparisonRatio: 180, comparisonRelation: 'gte', ytd: '74,40 Tr.kWh', plan: 'KH năm 40,87 Tr.kWh',
+    insight: ['Tiết kiệm điện tháng 7 đạt 16,52 Tr.kWh.', 'Lũy kế 74,40 Tr.kWh, báo cáo đánh giá đạt 180% kế hoạch năm.'],
+    advice: ['Theo dõi theo nhóm khách hàng để duy trì hiệu quả tiết kiệm điện.', 'Ưu tiên nhóm có sản lượng tiết kiệm lớn để nhân rộng giải pháp.'],
   },
   KD_TT: {
     primaryValue: '2,53%', primaryScope: 'Tháng 7/2026', comparison: 'KH ≤ 3,12%', comparisonRatio: 81.09, comparisonRelation: 'lte', ytd: '2,90%', plan: 'Ngưỡng kế hoạch ≤ 3,12%',
-    insight: ['Tổn thất tháng 7 là 2,53%, thấp hơn ngưỡng 3,12%.', 'Lũy kế đến tháng 7 là 2,90%.'],
+    insight: ['Tổn thất điện năng tháng 7 là 2,53%, lũy kế 2,90%, thấp hơn ngưỡng kế hoạch 3,12%.', 'Tổn thất TT: 1,36% tháng / 1,71% lũy kế; tổn thất HT: 3,27% tháng / 3,46% lũy kế. Tỷ lệ là đại lượng không thứ nguyên nên không hiển thị nhãn Đơn vị, chỉ giữ ký hiệu %.'],
     advice: ['Tiếp tục theo dõi các phát tuyến/TBA có tổn thất cao.', 'Ưu tiên drill-down theo khu vực, trạm và nhóm khách hàng khi dữ liệu chi tiết được kết nối.'],
   },
   CRM: {
-    primaryValue: '4.574 / 4.693', primaryScope: 'Xử lý trong tháng 7', comparison: '97,46% đã xử lý', comparisonRatio: 97.46, comparisonRelation: 'gte', ytd: 'Còn 119 đang xử lý',
+    primaryValue: '4.574 / 4.693 yêu cầu', primaryScope: 'Xử lý trong tháng 7', comparison: '97,46% đã xử lý', comparisonRatio: 97.46, comparisonRelation: 'gte', ytd: 'Còn 119 yêu cầu đang xử lý',
     insight: ['Trong tháng có 4.693 yêu cầu, đã xử lý 4.574 và còn 119 đang xử lý.'],
     advice: ['Ưu tiên phân nhóm 119 yêu cầu còn tồn theo tuổi yêu cầu và mức độ ảnh hưởng.', 'Theo dõi riêng các yêu cầu gần quá hạn để xử lý trước.'],
   },
   GANMOI: {
-    primaryValue: '710', primaryScope: 'Gắn mới điện kế tháng 7', ytd: 'Lũy kế 4.338', plan: 'Không có trường hợp quá hạn theo seed',
-    insight: ['Tháng 7 ghi nhận 710 trường hợp gắn mới điện kế.'],
+    primaryValue: '710', primaryScope: 'Gắn mới điện kế / Phát triển khách hàng tháng 7', ytd: 'Lũy kế 4.338', plan: 'Bảng chỉ tiêu chính đánh giá Đạt',
+    insight: ['Số liệu 710 tháng và 4.338 lũy kế trùng với chỉ tiêu “Phát triển khách hàng” trong bảng SXKD chính.', 'Bảng DVKH ghi thời gian bình quân 1,894 ngày trong tháng và 2,035 ngày lũy kế; không có trường hợp quá quy định.'],
     advice: ['Tiếp tục kiểm soát thời gian xử lý bình quân và các hồ sơ có nguy cơ quá hạn.'],
   },
   HDMBD: {
-    primaryValue: '2.092 / 8.081', primaryScope: 'Lũy kế ngoài sinh hoạt', comparison: '25,9% kế hoạch', comparisonRatio: 25.89, comparisonRelation: 'gte', plan: 'Hoàn thành kế hoạch',
-    insight: ['HĐMBĐ ngoài sinh hoạt mới đạt khoảng 25,9% kế hoạch và được báo cáo đánh giá chưa đạt.'],
+    primaryValue: '2.092 / 8.081 HĐ', primaryScope: 'HĐMBĐ ngoài sinh hoạt hết hiệu lực', comparison: '25,9% kế hoạch', comparisonRatio: 25.9, comparisonRelation: 'gte', ytd: 'Sinh hoạt: 202/222 HĐ · Ngoài SH: 2.092/8.081 HĐ', plan: 'Hoàn thành kế hoạch ký lại',
+    insight: ['HĐMBĐ sinh hoạt hết hiệu lực: 202/222 HĐ lũy kế, báo cáo đánh giá Đạt.', 'HĐMBĐ ngoài sinh hoạt: 2.092/8.081 HĐ, đạt 25,9% và Không đạt; HĐMBĐ ngắn hạn: 0 HĐ.'],
     advice: ['Phân nhóm HĐMBĐ theo thời gian hết hiệu lực và mức độ ưu tiên.', 'Theo dõi tiến độ xử lý theo đơn vị phụ trách thay vì chờ cuối kỳ.'],
+  },
+  DV_CHUYENCHU: {
+    primaryValue: 'SH 315 HĐ · NSH 1.817 HĐ', primaryScope: 'Tháng 7/2026', comparison: 'Thông tin', ytd: 'SH 2.096 HĐ · NSH 5.860 HĐ', plan: 'PDF không ghi kế hoạch',
+    insight: ['HĐMBĐ chuyển chủ thể sinh hoạt: 315 HĐ tháng, 2.096 HĐ lũy kế.', 'HĐMBĐ chuyển chủ thể ngoài sinh hoạt: 1.817 HĐ tháng, 5.860 HĐ lũy kế.'],
+    advice: ['Theo dõi khối lượng chuyển chủ theo sinh hoạt/ngoài sinh hoạt.', 'Kiểm soát hồ sơ tồn và thời gian xử lý khi dữ liệu chi tiết được kết nối.'],
   },
   TC_DN: {
     primaryValue: '2,57 ngày', primaryScope: 'Thời gian bình quân', comparison: 'Ngưỡng ≤ 3 ngày', comparisonRatio: 85.67, comparisonRelation: 'lte', ytd: '51 công trình lũy kế',
@@ -148,30 +365,30 @@ const kpiPresentation: Record<string, KpiPresentation> = {
     advice: ['Duy trì kiểm soát các hồ sơ có thời gian xử lý tiến gần ngưỡng 3 ngày.'],
   },
   DX_KB: {
-    primaryValue: '99,50%', primaryScope: 'Hiện trạng khai báo', comparison: '220.767 / 221.867', comparisonRatio: 99.5, comparisonRelation: 'gte',
+    primaryValue: '99,50%', primaryScope: 'Hiện trạng khai báo', comparison: '220.767 / 221.867 điểm đo', comparisonRatio: 99.5, comparisonRelation: 'gte',
     insight: ['Tỷ lệ khai báo đạt 99,50%.'], advice: ['Theo dõi phần chưa khai báo còn lại theo hãng công tơ và đơn vị quản lý.'],
   },
   DX_KN: {
-    primaryValue: '98,20%', primaryScope: 'Hiện trạng kết nối', comparison: '216.796 / 220.767', comparisonRatio: 98.2, comparisonRelation: 'gte', ytd: '3.678 điểm mất kết nối >48h',
+    primaryValue: '98,20%', primaryScope: 'Hiện trạng kết nối', comparison: '216.796 / 220.767 điểm đo', comparisonRatio: 98.2, comparisonRelation: 'gte', ytd: '3.678 điểm mất kết nối >48h',
     insight: ['Tỷ lệ kết nối đạt 98,20%.', 'Báo cáo ghi nhận 3.678 điểm mất kết nối trên 48 giờ.'],
     advice: ['Xếp hạng mất kết nối theo hãng công tơ và thời gian mất kết nối.', 'Theo dõi backlog >48h hằng ngày để tránh dồn xử lý cuối tháng.'],
   },
   DX_HD: {
-    primaryValue: '98,23%', primaryScope: 'Khai thác hóa đơn', comparison: '203.494 điểm', comparisonRatio: 98.23, comparisonRelation: 'gte',
+    primaryValue: '98,23%', primaryScope: 'Khai thác hóa đơn', comparison: '203.494 điểm đo', comparisonRatio: 98.23, comparisonRelation: 'gte',
     insight: ['Tỷ lệ khai thác hóa đơn được báo cáo là 98,23%.'], advice: ['Đối chiếu điểm đã kết nối nhưng chưa khai thác hóa đơn để ưu tiên xử lý.'],
   },
   DX_MK: {
-    primaryValue: '3.678', primaryScope: 'Điểm mất kết nối >48h', comparison: 'Cần xử lý', comparisonRelation: 'info',
+    primaryValue: '3.678 điểm đo', primaryScope: 'Mất kết nối >48h', comparison: 'Cần xử lý', comparisonRelation: 'info',
     insight: ['Báo cáo ghi nhận 3.678 điểm đo mất kết nối trên 48 giờ.'],
     advice: ['Tách danh sách theo hãng công tơ, đơn vị và số giờ mất kết nối.', 'Ưu tiên nhóm mất kết nối lâu nhất và nhóm có ảnh hưởng đến khai thác hóa đơn.'],
   },
   KT_SC: {
-    primaryValue: '15 vụ', primaryScope: 'Sự cố trung thế tháng 7', comparison: '79 vụ lũy kế / KH 7T ≤ 61,25', comparisonRatio: 128.98, comparisonRelation: 'lte', ytd: '79 vụ', plan: 'KH 7 tháng ≤ 61,25 vụ',
+    primaryValue: '15 vụ', primaryScope: 'Sự cố trung thế tháng 7', comparison: '79 vụ lũy kế / KH 7T ≤ 61,25', comparisonRatio: 128.97, comparisonRelation: 'lte', ytd: '79 vụ', plan: 'KH 7 tháng ≤ 61,25 vụ',
     insight: ['Tháng 7 phát sinh 15 sự cố trung thế.', 'Lũy kế 79 vụ vượt chỉ tiêu 7 tháng 61,25 vụ.', 'Trong tháng, sét chiếm 40%, động vật 26,67% và cây 20%.'],
     advice: ['Ưu tiên giải pháp vào ba nguyên nhân chiếm tỷ trọng lớn trong tháng: sét, động vật và cây.', 'Theo dõi sự cố lặp theo tuyến/TBA và đánh giá hiệu quả xử lý theo tuần.'],
   },
   SAIFI: {
-    primaryValue: '0,2512 lần', primaryScope: 'Tháng 7/2026', comparison: 'Lũy kế 1,6288 / ngưỡng 7T 1,71', comparisonRatio: 95.25, comparisonRelation: 'lte', ytd: '1,6288 lần', plan: 'KH 7 tháng 1,71 lần',
+    primaryValue: '0,2512 lần', primaryScope: 'Tháng 7/2026', comparison: 'Lũy kế 1,6288 / ngưỡng 7T 1,71 · BC 92,25%', comparisonRatio: 92.25, comparisonRelation: 'lte', ytd: '1,6288 lần', plan: 'KH 7 tháng 1,71 lần',
     insight: ['SAIFI tháng 7 là 0,2512 lần.', 'Lũy kế 1,6288 lần đang thấp hơn ngưỡng 7 tháng 1,71 lần.'], advice: ['Duy trì theo dõi nguyên nhân sự cố gây mất điện để bảo vệ dư địa chỉ tiêu.'],
   },
   SAIDI: {
@@ -183,16 +400,16 @@ const kpiPresentation: Record<string, KpiPresentation> = {
     insight: ['MAIFI tháng 7 là 0 và lũy kế thấp hơn nhiều so với ngưỡng 7 tháng.'], advice: ['Duy trì giám sát để phát hiện sớm các dao động bất thường.'],
   },
   DTXD: {
-    primaryValue: '97,064 tỷ', primaryScope: 'Lũy kế thực hiện', comparison: '34,3% KH năm', comparisonRatio: 34.3, comparisonRelation: 'gte', ytd: 'Giải ngân 47,482 tỷ · 16,8%', plan: 'KH năm 283,200 tỷ',
+    primaryValue: '97,064 tỷ đồng', primaryScope: 'Lũy kế thực hiện', comparison: '34,3% KH năm', comparisonRatio: 34.3, comparisonRelation: 'gte', ytd: 'Giải ngân 47,482 tỷ đồng · 16,8%', plan: 'KH năm 283,200 tỷ đồng',
     insight: ['Giá trị thực hiện lũy kế đạt 34,3% kế hoạch năm.', 'Giải ngân lũy kế đạt 16,8% kế hoạch năm.'],
     advice: ['Theo dõi tiến độ theo từng dự án/gói việc thay vì chỉ nhìn tổng giá trị.', 'Thiết lập mốc kiểm soát theo tuần cho các hạng mục có nguy cơ chậm giải ngân.'],
   },
   SCL: {
-    primaryValue: '29,712 tỷ', primaryScope: 'Lũy kế thực hiện', comparison: '81,03% KH', comparisonRatio: 81.03, comparisonRelation: 'gte', plan: 'KH 36,669 tỷ',
+    primaryValue: '29,712 tỷ đồng', primaryScope: 'Lũy kế thực hiện', comparison: '81,03% KH', comparisonRatio: 81.03, comparisonRelation: 'gte', plan: 'KH 36,669 tỷ đồng',
     insight: ['Giá trị thực hiện SCL đạt 81,03% kế hoạch nhưng phần tổng hợp vẫn đánh giá chưa đạt tiến độ.'], advice: ['Tách tiến độ theo công trình, nghiệm thu, thanh toán và quyết toán để xác định nút thắt.'],
   },
   TONKHO: {
-    primaryValue: '16,069 tỷ', primaryScope: 'Hiện trạng tồn kho', comparison: '73% định mức', comparisonRatio: 73.71, comparisonRelation: 'lte', plan: 'Định mức 21,8 tỷ',
+    primaryValue: '16,069 tỷ đồng', primaryScope: 'Hiện trạng tồn kho', comparison: '73% định mức', comparisonRatio: 73, comparisonRelation: 'lte', plan: 'Định mức 21,8 tỷ đồng',
     insight: ['Tồn kho đang trong định mức tổng thể.'], advice: ['Theo dõi tuổi tồn và nhóm vật tư chậm luân chuyển để tránh phát sinh tồn kho kéo dài.'],
   },
   CHIPHI: {
@@ -200,13 +417,13 @@ const kpiPresentation: Record<string, KpiPresentation> = {
     insight: ['Chi phí thực hiện cao hơn kế hoạch 1,91 đ/kWh.'], advice: ['Drill-down theo khoản mục chi phí để xác định nhóm vượt kế hoạch lớn nhất.', 'Theo dõi chênh lệch chi phí theo tháng khi chuỗi dữ liệu được bổ sung.'],
   },
   CBCNV: {
-    primaryValue: '355', primaryScope: 'CBCNV hiện tại', comparison: '297 nam · 58 nữ', comparisonRelation: 'info', insight: ['Quy mô CBCNV được báo cáo là 355 người.'], advice: ['Dùng làm mẫu số chuẩn cho các chỉ tiêu năng suất lao động.'],
+    primaryValue: '355 người', primaryScope: 'CBCNV hiện tại', comparison: '297 nam · 58 nữ', comparisonRelation: 'info', insight: ['Quy mô CBCNV được báo cáo là 355 người.'], advice: ['Dùng làm mẫu số chuẩn cho các chỉ tiêu năng suất lao động.'],
   },
   DT_GIO: {
-    primaryValue: '41,69 giờ/LĐ', primaryScope: 'Lũy kế đào tạo', comparison: '104,23% KH', comparisonRatio: 104.23, comparisonRelation: 'gte', plan: 'KH ≥ 40 giờ/LĐ', insight: ['Giờ đào tạo bình quân đã vượt kế hoạch.'], advice: ['Duy trì chất lượng và cơ cấu đào tạo, không chỉ theo số giờ.'],
+    primaryValue: '41,69 Giờ', primaryScope: 'Lũy kế đào tạo', comparison: '104,23% chỉ tiêu', comparisonRatio: 104.23, comparisonRelation: 'gte', plan: 'Chỉ tiêu 40 Giờ', insight: ['PDF ghi ĐVT của “Tổng số giờ đào tạo mỗi lao động” là Giờ; lũy kế đạt 41,69 Giờ.'], advice: ['Duy trì chất lượng và cơ cấu đào tạo, không chỉ theo số giờ.'],
   },
   NSLD_KH: {
-    primaryValue: '625 KH/CBCNV', primaryScope: 'Năng suất hiện tại', comparison: 'KH 637', comparisonRatio: 98.12, comparisonRelation: 'gte', plan: 'Chưa đạt', insight: ['Chỉ tiêu khách hàng/CBCNV chưa đạt kế hoạch.'], advice: ['Theo dõi đồng thời số khách hàng và biến động nhân sự để xác định nguyên nhân chênh lệch.'],
+    primaryValue: '625 KH', primaryScope: 'Số khách hàng / Số CBCNV', comparison: '98% chỉ tiêu · Chưa đạt', comparisonRatio: 98, comparisonRelation: 'gte', plan: 'Chỉ tiêu 637 KH', insight: ['PDF ghi ĐVT là KH; chỉ tiêu mô tả tỷ số Số khách hàng/Số CBCNV.', 'Thực hiện 625 KH, bằng 98% chỉ tiêu 637 KH.'], advice: ['Theo dõi đồng thời số khách hàng và biến động nhân sự để xác định nguyên nhân chênh lệch.'],
   },
   ATTT: {
     primaryValue: '100%', primaryScope: 'Thực hiện theo báo cáo', comparison: 'Đạt', comparisonRatio: 100, comparisonRelation: 'gte', insight: ['Chỉ tiêu ATTT được báo cáo đạt.'], advice: ['Tiếp tục duy trì diễn tập và phổ biến quy trình ứng cứu.'],
@@ -299,7 +516,7 @@ function metricRatio(history: MetricHistory, point: MetricHistoryPoint) {
 }
 
 function getPresentation(item: KpiCard, data?: DashboardBootstrap): KpiPresentation {
-  const history = data?.history?.[item.id];
+  const history = data ? historyForKpi(data, item.id) : undefined;
   const point = data && history ? historyPoint(data, item.id) : undefined;
   if (history && point && data) {
     const ratio = metricRatio(history, point);
@@ -520,7 +737,7 @@ function ChartMiniInsight({ history, current, priorMonth, priorYear }: { history
 }
 
 function HistoryChart({ data, kpiId, mode }: { data: DashboardBootstrap; kpiId: string; mode: 'ytd' | 'forecast' }) {
-  const history = data.history?.[kpiId];
+  const history = historyForKpi(data, kpiId);
   if (!history) return <div className="lockedPanel"><span>⌁</span><b>Chưa có dữ liệu biểu đồ</b></div>;
   const year = data.period.slice(0, 4);
   const month = Number(data.period.slice(5));
@@ -565,7 +782,7 @@ function HistoryChart({ data, kpiId, mode }: { data: DashboardBootstrap; kpiId: 
   const detailY = detailValue === undefined ? plotBottom : y(detailValue);
   const pin = (index: number) => setSelectedIndex((current) => current === index ? null : index);
   return <div className="historyChartWrap interactiveChartWrap" onMouseLeave={() => setHoveredIndex(null)}>
-    <div className="chartUnitLabel">Đơn vị: <b>{history.unit || 'Giá trị'}</b></div>
+    {chartDisplayUnit(history) && <div className="chartUnitLabel">Đơn vị: <b>{chartDisplayUnit(history)}</b></div>}
     <svg className="historyChart" viewBox="0 0 390 158" role="img" aria-label={`Biểu đồ ${mode === 'ytd' ? 'lũy kế' : 'dự báo'} ${kpiId}`}>
       <rect x={plotLeft} y={plotTop} width={plotRight - plotLeft} height={plotBottom - plotTop} className="chartPlotDismiss" onPointerDown={() => setSelectedIndex(null)} />
       {gridValues.map((value, index) => <g key={`${value}-${index}`}><line x1={plotLeft} y1={y(value)} x2={plotRight} y2={y(value)} className={`chartGrid chartGrid${index}`} /><text x={plotLeft - 7} y={y(value) + 3.5} textAnchor="end" className="chartAxisLabel">{axisLabel(value, step)}</text></g>)}
@@ -582,7 +799,7 @@ function HistoryChart({ data, kpiId, mode }: { data: DashboardBootstrap; kpiId: 
 }
 
 function MonthlyActualTargetChart({ data, kpiId }: { data: DashboardBootstrap; kpiId: string }) {
-  const history = data.history?.[kpiId];
+  const history = historyForKpi(data, kpiId);
   if (!history) return <div className="lockedPanel"><span>▥</span><b>Chưa có dữ liệu biểu đồ</b></div>;
   const year = data.period.slice(0,4), month = Number(data.period.slice(5));
   const source = Array.isArray(history.points) ? history.points : [];
@@ -605,7 +822,7 @@ function MonthlyActualTargetChart({ data, kpiId }: { data: DashboardBootstrap; k
   const currentIndex=Math.max(0,month-1), current=points[currentIndex], previous=currentIndex>0?points[currentIndex-1]:undefined, previousYear=prior[currentIndex];
   const barWidth=15;
   return <div className="historyChartWrap interactiveChartWrap adaptiveMonthlyChart" onMouseLeave={()=>setHovered(null)}>
-    <div className="chartUnitLabel">Đơn vị: <b>{history.unit||'Giá trị'}</b></div>
+    {chartDisplayUnit(history) && <div className="chartUnitLabel">Đơn vị: <b>{chartDisplayUnit(history)}</b></div>}
     <svg className="historyChart" viewBox="0 0 390 158" role="img" aria-label={`Biểu đồ cột thực hiện và mốc kế hoạch ${kpiId}`}>
       {grid.map((v,i)=><g key={i}><line x1={plotLeft} x2={plotRight} y1={y(v)} y2={y(v)} className={`chartGrid chartGrid${i}`}/><text x={plotLeft-7} y={y(v)+3.5} textAnchor="end" className="chartAxisLabel">{axisLabel(v,step)}</text></g>)}
       {points.map((point,i)=>{const av=numericValue(point?.actual),pv=numericValue(point?.planMonth),cx=x(i),showActual=i<month&&av!==undefined;return <g key={i} className={`monthlyBarGroup ${active===i?'active':''}`}>
@@ -629,7 +846,7 @@ function MonthlyActualTargetChart({ data, kpiId }: { data: DashboardBootstrap; k
 }
 
 function SamePeriodColumnsChart({ data, kpiId }: { data: DashboardBootstrap; kpiId: string }) {
-  const history=data.history?.[kpiId];
+  const history=historyForKpi(data,kpiId);
   if(!history) return <div className="lockedPanel"><span>↔</span><b>Chưa có dữ liệu cùng kỳ</b></div>;
   const year=data.period.slice(0,4), month=Number(data.period.slice(5)), source=Array.isArray(history.points)?history.points:[];
   const current=useMemo(()=>Array.from({length:12},(_,i)=>source.find((p)=>p.period===`${year}-${String(i+1).padStart(2,'0')}`)),[source,year]);
@@ -643,7 +860,7 @@ function SamePeriodColumnsChart({ data, kpiId }: { data: DashboardBootstrap; kpi
   const pick=(event:{clientX:number;currentTarget:SVGRectElement})=>{const rect=event.currentTarget.getBoundingClientRect();return Math.max(0,Math.min(11,Math.round(((event.clientX-rect.left)/Math.max(rect.width,1))*11)))};
   const ca=numericValue(active===null?undefined:current[active]?.actual),pa=numericValue(active===null?undefined:prior[active]?.actual),delta=changeDelta(ca,pa),hasDetail=active!==null&&(ca!==undefined||pa!==undefined);
   return <div className="historyChartWrap interactiveChartWrap samePeriodColumns" onMouseLeave={()=>setHovered(null)}>
-    <div className="chartUnitLabel">Đơn vị: <b>{history.unit||'Giá trị'}</b></div><svg className="historyChart" viewBox="0 0 390 158" role="img" aria-label="Biểu đồ cột cùng kỳ">
+    {chartDisplayUnit(history) && <div className="chartUnitLabel">Đơn vị: <b>{chartDisplayUnit(history)}</b></div>}<svg className="historyChart" viewBox="0 0 390 158" role="img" aria-label="Biểu đồ cột cùng kỳ">
       {grid.map((v,i)=><g key={i}><line x1={plotLeft} x2={plotRight} y1={y(v)} y2={y(v)} className={`chartGrid chartGrid${i}`}/><text x={plotLeft-7} y={y(v)+3.5} textAnchor="end" className="chartAxisLabel">{axisLabel(v,step)}</text></g>)}
       {current.map((point,i)=>{const cv=numericValue(point?.actual),pv=numericValue(prior[i]?.actual),cx=x(i);return <g key={i}>{pv!==undefined&&<rect x={cx-11} y={y(pv)} width="9" height={plotBottom-y(pv)} rx="3" className="samePriorBar"/>}{i<month&&cv!==undefined&&<rect x={cx+2} y={y(cv)} width="9" height={plotBottom-y(cv)} rx="3" className="sameCurrentBar"/>}<text x={cx} y="151" textAnchor="middle" className={active===i?'chartLabel current':i===month-1?'chartLabel currentPeriod':'chartLabel'}>{`T${i+1}`}</text></g>})}
       <rect x={plotLeft-12} y={plotTop} width={plotRight-plotLeft+24} height={plotBottom-plotTop+24} className="chartScrubberLayer" onPointerDown={(event)=>{event.currentTarget.setPointerCapture?.(event.pointerId);setSelected(pick(event))}} onPointerMove={(event)=>{const idx=pick(event);if(event.pointerType==='mouse'&&event.buttons===0&&selected===null)setHovered(idx);else if(event.buttons!==0||event.pointerType==='touch')setSelected(idx)}}/>
@@ -682,7 +899,7 @@ function ParetoIncidentChart({ data }: { data:DashboardBootstrap }) {
 }
 
 function AdaptiveCurrentChart({ data, kpiId }: { data:DashboardBootstrap; kpiId:string }) {
-  const history=data.history?.[kpiId],point=historyPoint(data,kpiId);if(!history||!point)return null;const kind=chartKindFor(kpiId,history);if(kind==='pareto')return <ParetoIncidentChart data={data}/>;if(kind==='gauge')return <GaugeChart history={history} point={point}/>;if(kind==='threshold')return <ThresholdChart history={history} point={point}/>;return <MonthlyActualTargetChart data={data} kpiId={kpiId}/>;
+  const history=historyForKpi(data,kpiId),point=historyPoint(data,kpiId);if(!history||!point)return null;const kind=chartKindFor(kpiId,history);if(kind==='pareto')return <ParetoIncidentChart data={data}/>;if(kind==='gauge')return <GaugeChart history={history} point={point}/>;if(kind==='threshold')return <ThresholdChart history={history} point={point}/>;return <MonthlyActualTargetChart data={data} kpiId={kpiId}/>;
 }
 
 function rangeMonths(selection:RangeSelection) {
@@ -709,7 +926,7 @@ function rangeValue(history:MetricHistory, selection:RangeSelection) {
 }
 
 function RangeComparisonPanel({ data, kpiId, comparison, edit }: { data:DashboardBootstrap; kpiId:string; comparison:ComparisonSelection; edit:()=>void }) {
-  const history=data.history?.[kpiId];
+  const history=historyForKpi(data,kpiId);
   if(!history) return <div className="lockedPanel"><span>↔</span><b>Chưa có dữ liệu lịch sử</b></div>;
   const left=rangeValue(history,comparison.left), right=rangeValue(history,comparison.right);
   if(!left||!right) return <div className="lockedPanel"><span>↔</span><b>Kỳ so sánh chưa có dữ liệu</b><button onClick={edit}>Đổi bộ lọc</button></div>;
@@ -727,7 +944,7 @@ function RangeComparisonPanel({ data, kpiId, comparison, edit }: { data:Dashboar
 }
 
 function SamePeriodPanel({ data, kpiId }: { data: DashboardBootstrap; kpiId: string }) {
-  const history = data.history?.[kpiId];
+  const history = historyForKpi(data, kpiId);
   const current = historyPoint(data, kpiId);
   const same = historyPoint(data, kpiId, previousYearPeriod(data.period));
   if (!history || !current || !same) return <div className="lockedPanel"><span>↔</span><b>Chưa có dữ liệu cùng kỳ</b></div>;
@@ -745,7 +962,7 @@ function SamePeriodPanel({ data, kpiId }: { data: DashboardBootstrap; kpiId: str
 }
 
 function ForecastPanel({ data, kpiId }: { data: DashboardBootstrap; kpiId: string }) {
-  const history = data.history?.[kpiId];
+  const history = historyForKpi(data, kpiId);
   if (!history) return <div className="lockedPanel"><span>⌁</span><b>Chưa có dữ liệu lịch sử</b></div>;
   const forecast = forecastFor(history, data.period);
   if (!forecast) return <div className="lockedPanel"><span>⌁</span><b>Chưa đủ dữ liệu để dự báo</b><p>Cần tối thiểu 6 kỳ liên tiếp.</p></div>;
@@ -861,7 +1078,7 @@ function previousMonthPeriod(period: string) {
 }
 
 function trendSignalForKpi(data: DashboardBootstrap, kpiId: string): TrendSignal {
-  const history = data.history?.[kpiId];
+  const history = historyForKpi(data, kpiId);
   if (!history) return 'none';
   const current = historyPoint(data, kpiId);
   const previous = historyPoint(data, kpiId, previousMonthPeriod(data.period));
@@ -934,7 +1151,7 @@ function kpiDifficulties(data: DashboardBootstrap, domainId: string, item: KpiCa
   const dynamic: string[] = [];
   if (!presentation.plan && !item.plan) dynamic.push('Chưa có đầy đủ kế hoạch/ngưỡng chuẩn hóa cho KPI này nên khả năng đối chiếu còn hạn chế.');
   if (item.tone === 'bad' || item.tone === 'warn') dynamic.push('Kết quả hiện tại đang cần theo dõi sát so với kế hoạch/ngưỡng để xử lý sớm chênh lệch.');
-  const history = data.history?.[item.id];
+  const history = historyForKpi(data, item.id);
   if (history) {
     const year = data.period.slice(0, 4);
     const month = Number(data.period.slice(5));
@@ -1070,7 +1287,9 @@ function DomainDetail({ data, domainId, favoriteKpis, toggleKpiFavorite, back, o
   const field = data.fields.find((x) => x.id === domainId);
   const [filter, setFilter] = useState<'all' | 'attention' | 'favorite'>('all');
   if (!field) return null;
-  const visible = field.items
+  const extras = supplementalKpisForDomain(domainId);
+  const sourceItems = [...field.items, ...extras.filter((extra) => !field.items.some((item) => item.id === extra.id))];
+  const visible = sourceItems
     .filter((item) => filter === 'all' || (filter === 'attention' && ['bad', 'warn'].includes(item.tone)) || (filter === 'favorite' && favoriteKpis.includes(item.id)))
     .sort((a, b) => Number(favoriteKpis.includes(b.id)) - Number(favoriteKpis.includes(a.id)));
   return (
@@ -1116,7 +1335,7 @@ function KpiDetail({ data, domainId, kpiId, favoriteKpis, toggleKpiFavorite, bac
   weather:WeatherBundle | null;
 }) {
   const field = data.fields.find((x) => x.id === domainId);
-  const item = field?.items.find((x) => x.id === kpiId);
+  const item = field?.items.find((x) => x.id === kpiId) ?? supplementalKpiForDomain(domainId, kpiId);
   const [mode, setMode] = useState<DetailMode>('compare');
   const [focusChart, setFocusChart] = useState(false);
   useEffect(() => { setFocusChart(false); }, [kpiId, mode]);
@@ -1151,8 +1370,8 @@ function KpiDetail({ data, domainId, kpiId, favoriteKpis, toggleKpiFavorite, bac
       </div>
       <section className={`detailCard chartDetailCard ${focusChart ? 'chartFocusCard' : ''}`}>
         <div className="detailCardHead"><div><div className="detailCardTitle">{mode === 'compare' ? 'Thực hiện tháng & kế hoạch' : mode === 'ytd' ? 'Lũy kế & kế hoạch' : mode === 'same' ? 'So sánh cùng kỳ' : mode === 'range' ? 'So sánh kỳ tùy chọn' : 'Dự báo xu hướng'}</div>{focusChart && <small>{item.label} · {periodLabel(data.period)}</small>}</div><button type="button" className="chartFocusBtn" onClick={() => setFocusChart((value) => !value)} aria-label={focusChart ? 'Đóng chế độ tập trung' : 'Mở chế độ tập trung'}>{focusChart ? '×' : '⛶'}</button></div>
-        {mode === 'compare' && <AdaptiveCurrentChart data={data} kpiId={item.id}/>} 
-        {mode === 'ytd' && <><div className="statPair"><div><small>Lũy kế / hiện trạng</small><b>{p.ytd ?? item.detail ?? item.value}</b></div><span>↔</span><div><small>Kế hoạch / ngưỡng</small><b>{p.plan ?? item.plan ?? 'Chưa có'}</b></div></div>{data.history?.[item.id] && <HistoryChart data={data} kpiId={item.id} mode="ytd" />}</>}
+        {mode === 'compare' && (historyForKpi(data, item.id) ? <AdaptiveCurrentChart data={data} kpiId={item.id}/> : <div className="statPair"><div><small>Hiện tại</small><b>{p.primaryValue ?? item.value}</b></div><span>↔</span><div><small>Kế hoạch / đánh giá</small><b>{p.plan ?? item.plan ?? p.comparison ?? toneLabel(item.tone, item.status)}</b></div></div>)} 
+        {mode === 'ytd' && <><div className="statPair"><div><small>Lũy kế / hiện trạng</small><b>{p.ytd ?? item.detail ?? item.value}</b></div><span>↔</span><div><small>Kế hoạch / ngưỡng</small><b>{p.plan ?? item.plan ?? 'Chưa có'}</b></div></div>{historyForKpi(data, item.id) && <HistoryChart data={data} kpiId={item.id} mode="ytd" />}</>}
         {mode === 'same' && <SamePeriodPanel data={data} kpiId={item.id} />}
         {mode === 'range' && <RangeComparisonPanel data={data} kpiId={item.id} comparison={comparison} edit={openCompare}/>} 
         {mode === 'forecast' && <ForecastPanel data={data} kpiId={item.id} />}
@@ -1329,7 +1548,7 @@ export default function AppShell() {
   const addPlan = (domainId: string, kpiId: string) => {
     if (!data) return;
     const field = data.fields.find((x) => x.id === domainId);
-    const item = field?.items.find((x) => x.id === kpiId);
+    const item = field?.items.find((x) => x.id === kpiId) ?? supplementalKpiForDomain(domainId, kpiId);
     if (!field || !item) return;
     const advice = getPresentation(item, data).advice?.[0] ?? `Theo dõi và xử lý ${item.label}.`;
     setCustomPlans((prev) => {
@@ -1406,8 +1625,8 @@ export default function AppShell() {
     }
   } else if (sheet?.kind === 'kpi-plan') {
     const field = data.fields.find((x) => x.id === sheet.domainId);
-    const item = field?.items.find((x) => x.id === sheet.kpiId);
-    const history = data.history?.[sheet.kpiId];
+    const item = field?.items.find((x) => x.id === sheet.kpiId) ?? supplementalKpiForDomain(sheet.domainId, sheet.kpiId);
+    const history = historyForKpi(data, sheet.kpiId);
     const point = historyPoint(data, sheet.kpiId);
     if (field && item) {
       const p = getPresentation(item, data);
@@ -1424,7 +1643,7 @@ export default function AppShell() {
     }
   } else if (sheet?.kind === 'advice') {
     const field = data.fields.find((x) => x.id === sheet.domainId);
-    const item = field?.items.find((x) => x.id === sheet.kpiId);
+    const item = field?.items.find((x) => x.id === sheet.kpiId) ?? supplementalKpiForDomain(sheet.domainId, sheet.kpiId);
     if (field && item) {
       const p = getPresentation(item, data);
       const official = data.plans.filter((plan) => (officialPlanByDomain[field.id] ?? []).includes(plan.id));
