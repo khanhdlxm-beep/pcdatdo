@@ -12,7 +12,9 @@ export async function loadDashboard(period?: string): Promise<DashboardBootstrap
 
   const endpoint = new URL(url);
   endpoint.searchParams.set('action', 'bootstrap');
-  endpoint.searchParams.set('period', period || pdfSeed.period);
+  // Khi người dùng không chọn kỳ cụ thể, yêu cầu Apps Script trả kỳ PDF đã duyệt mới nhất.
+  // getImportedBootstrap_ sẽ tự chọn kỳ mới nhất nếu giá trị period không trùng kỳ lịch sử.
+  endpoint.searchParams.set('period', period || 'latest');
   if (key) endpoint.searchParams.set('apiKey', key);
 
   try {
