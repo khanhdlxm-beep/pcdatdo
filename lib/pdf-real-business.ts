@@ -61,6 +61,14 @@ function scanDoc(period:string,doc:PdfExtractedDocument):PdfImportRecord[]{
       let x=findNums(raw,/Điện\s*nhận\s+Tr\.kWh\s+([\d.,]+)\s+([\d.,]+)/i);
       if(x?.[0]!==undefined&&x?.[1]!==undefined) out.push(rec(period,doc,page.page,'KD_DIENNHAN','Điện nhận','Tr.kWh',{actualMonth:x[0],actualYtd:x[1]},'Đạt',raw));
 
+      const peak=findNums(raw,/Cao\s*điểm\s+Tr\.kWh\s+([\d.,]+)\s+([\d.,]+)/i);
+      const low=findNums(raw,/Thấp\s*điểm\s+Tr\.kWh\s+([\d.,]+)\s+([\d.,]+)/i);
+      const normal=findNums(raw,/Bình\s*thường\s+Tr\.kWh\s+([\d.,]+)\s+([\d.,]+)/i);
+      const mix=findNums(raw,/Cơ\s*cấu\s*điện\s*mua\s+([\d.,]+)\s+([\d.,]+)/i);
+      if(mix?.[0]!==undefined&&mix?.[1]!==undefined){
+        out.push(rec(period,doc,page.page,'KD_COCADIENMUA','Cơ cấu điện mua',undefined,{actualMonth:mix[0],actualYtd:mix[1]},'Đạt',raw,[peak?.[0]!==undefined?`Cao điểm: ${peak[0]} Tr.kWh tháng / ${peak[1]} Tr.kWh lũy kế.`:'',low?.[0]!==undefined?`Thấp điểm: ${low[0]} / ${low[1]} Tr.kWh.`:'',normal?.[0]!==undefined?`Bình thường: ${normal[0]} / ${normal[1]} Tr.kWh.`:'','PDF để trống ĐVT cho chỉ tiêu tổng Cơ cấu điện mua; không tự gán %.'].filter(Boolean)));
+      }
+
       x=findNums(raw,/Giá\s*mua\s*điện\s*bình\s*quân\s+đ\/kWh\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)/i);
       if(x?.[0]!==undefined&&x?.[1]!==undefined&&x?.[2]!==undefined) out.push(rec(period,doc,page.page,'KD_GIAMUA','Giá mua điện bình quân','đ/kWh',{planYear:x[0],actualMonth:x[1],actualYtd:x[2]},'Không đạt',raw,['Bảng chỉ tiêu chính ghi Không đạt; phần tổng hợp cuối báo cáo có thể không liệt kê riêng chỉ tiêu này.']));
 
@@ -80,7 +88,7 @@ function scanDoc(period:string,doc:PdfExtractedDocument):PdfImportRecord[]{
     if(n.includes('du bao dien thuong pham')){
       const x=findNums(raw,/Trên\s*1\s*triệu[\s\S]{0,180}?([\d.,]+)%\s+([\d.,]+)%[\s\S]{0,100}?Không\s*đạt[\s\S]{0,100}?([\d.,]+)%\s+([\d.,]+)%\s+Đạt/i);
       if(x?.[0]!==undefined&&x?.[1]!==undefined&&x?.[2]!==undefined&&x?.[3]!==undefined){
-        out.push(rec(period,doc,page.page,'KD_DBPT','Dự báo phụ tải (điện thương phẩm)','%',{actualMonth:x[2],actualYtd:x[3],samePeriodMonth:x[0],samePeriodYtd:x[1]},'Đạt một phần',raw,['actualMonth/actualYtd lưu sai số dự báo Tổng thương phẩm; samePeriodMonth/samePeriodYtd tạm dùng để lưu sai số nhóm Trên 1 triệu.']));
+        out.push(rec(period,doc,page.page,'KD_DBPT','Dự báo phụ tải (điện thương phẩm)','%',{actualMonth:x[2],actualYtd:x[3]},'Đạt một phần',raw,[`Nhóm trên 1 triệu: ${x[0]}% tháng, ${x[1]}% lũy kế - Không đạt.`,`Tổng thương phẩm: ${x[2]}% tháng, ${x[3]}% lũy kế - Đạt.`]));
       }
     }
 
@@ -105,9 +113,11 @@ function scanDoc(period:string,doc:PdfExtractedDocument):PdfImportRecord[]{
       const one=findNums(raw,/([\d.,]+)\/([\d.,]+)\s*công\s*tơ\s*1\s*pha/i);
       const three=findNums(raw,/([\d.,]+)\/([\d.,]+)\s*công\s*tơ\s*3\s*pha/i);
       const ti=findNums(raw,/([\d.,]+)\/([\d.,]+)\s*TI\s*hạ\s*thế\s*khách\s*hàng/i);
+      const timu=findNums(raw,/([\d.,]+)\/([\d.,]+)\s*TI-TU\s*trung\s*thế/i);
+      const tipublic=findNums(raw,/([\d.,]+)\/([\d.,]+)\s*TI\s*hạ\s*thế\s*trạm\s*công\s*cộng/i);
       if(one?.[0]!==undefined){
         const existing=out.find(r=>r.kpiId==='KD_CONGTO');
-        const extra=[`Công tơ 1 pha: ${one[0]}/${one[1]}.`,three?.[0]!==undefined?`Công tơ 3 pha: ${three[0]}/${three[1]}.`:'',ti?.[0]!==undefined?`TI hạ thế KH: ${ti[0]}/${ti[1]}.`:''].filter(Boolean);
+        const extra=[`Công tơ 1 pha: ${one[0]}/${one[1]}.`,three?.[0]!==undefined?`Công tơ 3 pha: ${three[0]}/${three[1]}.`:'',ti?.[0]!==undefined?`TI hạ thế KH: ${ti[0]}/${ti[1]}.`:'',timu?.[0]!==undefined?`TI-TU trung thế: ${timu[0]}/${timu[1]}.`:'',tipublic?.[0]!==undefined?`TI hạ thế trạm công cộng: ${tipublic[0]}/${tipublic[1]}.`:''].filter(Boolean);
         if(existing) existing.issues=[...existing.issues,...extra];
         else out.push(rec(period,doc,page.page,'KD_CONGTO','Thay / bảo trì công tơ','Cái',{},'Không đạt',raw,extra));
       }
