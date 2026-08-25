@@ -34,13 +34,72 @@ function doPost(e) {
     const payload = JSON.parse((e && e.postData && e.postData.contents) || '{}');
     if (!isAuthorizedPayload_(payload)) return json_({ ok:false, error:'Unauthorized' });
     if (payload.action === 'stagePdfImport') return json_(stagePdfImport_(payload));
-    if (payload.action === 'approvePdfImport') return json_(approvePdfImport_(payload));
+    if (payload.action === 'approvePdfImport') return json_(approvePdfImportProduction_(payload));
     if (payload.action === 'correctImportedKpi') return json_(correctImportedKpi_(payload));
     if (payload.action === 'savePdfStaging') return json_(savePdfStaging_(payload));
     return json_({ ok:false, error:'Unknown action' });
   } catch (err) {
     return json_({ ok:false, error:String(err && err.message ? err.message : err) });
   }
+}
+
+/**
+ * Duyệt xong mới dọn các dòng của import cũ đã bị parser mới thay thế.
+ * Nhờ vậy nếu phiên mới còn NEED_REVIEW/CONFLICT thì dữ liệu Production cũ vẫn nguyên vẹn.
+ */
+function approvePdfImportProduction_(payload) {
+  const importId = String(payload.importId || '');
+  const before = pdfFindObject_(PDFMOD.SHEETS.IMPORTS, 'IMPORT_ID', importId) || {};
+  const supersedes = pdfSupersedesFromNote_(before.NOTE);
+  const result = approvePdfImport_(payload);
+  if (result && result.ok && !result.alreadyApproved && supersedes.length) {
+    cleanupSupersededPdfData_(supersedes, importId);
+  }
+  return result;
+}
+
+function cleanupSupersededPdfData_(supersededIds, keepImportId) {
+  const ids = Array.isArray(supersededIds) ? supersededIds.filter(Boolean) : [];
+  if (!ids.length) return { removedHistory:0, removedSummary:0 };
+  const ss = SpreadsheetApp.getActive();
+  let removedHistory = 0, removedSummary = 0;
+
+  const hist = ss.getSheetByName(PDFMOD.SHEETS.HISTORY);
+  if (hist && hist.getLastRow() >= 2) {
+    const headers = hist.getRange(1,1,1,hist.getLastColumn()).getValues()[0].map(String);
+    const importCol = headers.indexOf('IMPORT_ID');
+    const statusCol = headers.indexOf('VALUE_STATUS');
+    if (importCol >= 0) {
+      const matrix = hist.getRange(2,1,hist.getLastRow()-1,headers.length).getValues();
+      const keep = matrix.filter(function(row){
+        const oldImport = String(row[importCol] || '');
+        const manual = statusCol >= 0 && String(row[statusCol] || '') === 'MANUAL_OVERRIDE';
+        const remove = ids.indexOf(oldImport) >= 0 && oldImport !== keepImportId && !manual;
+        if (remove) removedHistory++;
+        return !remove;
+      });
+      if (hist.getLastRow() > 1) hist.getRange(2,1,hist.getLastRow()-1,headers.length).clearContent();
+      if (keep.length) hist.getRange(2,1,keep.length,headers.length).setValues(keep);
+    }
+  }
+
+  const summary = ss.getSheetByName(PDFMOD.SHEETS.SUMMARY);
+  if (summary && summary.getLastRow() >= 2) {
+    const headers = summary.getRange(1,1,1,summary.getLastColumn()).getValues()[0].map(String);
+    const importCol = headers.indexOf('IMPORT_ID');
+    if (importCol >= 0) {
+      const matrix = summary.getRange(2,1,summary.getLastRow()-1,headers.length).getValues();
+      const keep = matrix.filter(function(row){
+        const remove = ids.indexOf(String(row[importCol] || '')) >= 0;
+        if (remove) removedSummary++;
+        return !remove;
+      });
+      if (summary.getLastRow() > 1) summary.getRange(2,1,summary.getLastRow()-1,headers.length).clearContent();
+      if (keep.length) summary.getRange(2,1,keep.length,headers.length).setValues(keep);
+    }
+  }
+  SpreadsheetApp.flush();
+  return { removedHistory:removedHistory, removedSummary:removedSummary };
 }
 
 function getBootstrap_(period) {
