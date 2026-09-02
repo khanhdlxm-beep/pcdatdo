@@ -367,38 +367,42 @@ function niceStep(value: number) {
 
 function niceAxisScale(values: number[], includeZero = false) {
   const finite = values.filter(Number.isFinite);
-  if (!finite.length) return { min: 0, max: 1, step: 0.5, ticks: [0, 0.5, 1] };
+  if (!finite.length) return { min: 0, max: 1, step: 0.25, ticks: [0, 0.25, 0.5, 0.75, 1] };
   const rawMin = Math.min(...finite);
   const rawMax = Math.max(...finite);
-  const magnitude = Math.max(Math.abs(rawMin), Math.abs(rawMax), 1);
   const rawSpan = Math.max(rawMax - rawMin, 0);
-  const relativeSpan = rawSpan / magnitude;
-  let step = relativeSpan < 0.08
-    ? niceStep(Math.max(rawSpan / 2, magnitude * 0.01))
-    : niceStep(magnitude / 4);
+  const magnitude = Math.max(Math.abs(rawMin), Math.abs(rawMax), 1);
+  const targetIntervals = 4;
+  const paddedSpan = rawSpan > 0 ? rawSpan * 1.18 : magnitude * 0.12;
+  let step = niceStep(Math.max(paddedSpan / targetIntervals, magnitude * 0.0025));
   if (magnitude >= 20 && step < 1) step = 1;
-  let min = includeZero ? 0 : Math.floor(rawMin / step) * step;
-  let max = Math.ceil(rawMax / step) * step;
-  if (min === max) {
-    min = includeZero ? 0 : Math.max(0, min - step);
+  const pad = Math.max(step * 0.35, rawSpan * 0.08);
+  let min = includeZero ? 0 : Math.floor((rawMin - pad) / step) * step;
+  let max = Math.ceil((rawMax + pad) / step) * step;
+  if (rawMin >= 0 && min < 0) min = 0;
+  if (min === max) max = min + step * targetIntervals;
+  let intervals = Math.round((max - min) / step);
+  while (intervals > 4) {
+    step = niceStep(step * 1.25);
+    min = includeZero ? 0 : Math.floor((rawMin - pad) / step) * step;
+    if (rawMin >= 0 && min < 0) min = 0;
+    max = Math.ceil((rawMax + pad) / step) * step;
+    intervals = Math.round((max - min) / step);
+  }
+  while (intervals < 3) {
     max += step;
+    intervals = Math.round((max - min) / step);
   }
-  // Luôn có ít nhất 3 mốc để trục tung dễ đọc trên điện thoại.
-  while ((max - min) / step < 2) {
-    if (!includeZero && min - step >= 0) min -= step;
-    else max += step;
-  }
-  const ticks: number[] = [];
-  for (let value = min; value <= max + step * 0.01; value += step) {
-    ticks.push(Number(value.toPrecision(12)));
-    if (ticks.length >= 6) break;
-  }
+  const ticks = Array.from({ length: intervals + 1 }, (_, index) => Number((min + index * step).toPrecision(12)));
   return { min, max, step, ticks };
 }
 
 function axisLabel(value: number, step = 1) {
   if (!Number.isFinite(value)) return '—';
-  const digits = step >= 1 ? 0 : step >= 0.1 ? 1 : 2;
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000) return `${(value / 1_000_000).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}M`;
+  if (abs >= 10_000) return `${(value / 1_000).toLocaleString('vi-VN', { maximumFractionDigits: 1 })}k`;
+  const digits = step >= 10 ? 0 : step >= 1 ? (Math.abs(step % 1) > 0.001 ? 1 : 0) : step >= 0.1 ? 1 : step >= 0.01 ? 2 : 3;
   return value.toLocaleString('vi-VN', { maximumFractionDigits: digits });
 }
 
@@ -484,7 +488,7 @@ function HistoryChart({ data, kpiId, mode }: { data: DashboardBootstrap; kpiId: 
   const axis = niceAxisScale(all);
   const { min, max, step, ticks: gridValues } = axis;
   const span = Math.max(max - min, step || 1);
-  const plotLeft = 50, plotRight = 374, plotTop = 24, plotBottom = 132;
+  const plotLeft = 58, plotRight = 374, plotTop = 22, plotBottom = 132;
   const x = (index: number) => plotLeft + index * ((plotRight - plotLeft) / 11);
   const y = (value: number) => plotBottom - ((value - min) / span) * (plotBottom - plotTop);
   const actualPath = smoothChartPath(actualValues, x, y), planPath = smoothChartPath(planValues, x, y), forecastPath = smoothChartPath(forecastValues, x, y);
@@ -504,6 +508,8 @@ function HistoryChart({ data, kpiId, mode }: { data: DashboardBootstrap; kpiId: 
   return <div className="historyChartWrap interactiveChartWrap" onMouseLeave={() => setHoveredIndex(null)}>
     {chartDisplayUnit(history) && <div className="chartUnitLabel">Đơn vị: <b>{chartDisplayUnit(history)}</b></div>}
     <svg className="historyChart" viewBox="0 0 390 158" role="img" aria-label={`Biểu đồ ${mode === 'ytd' ? 'lũy kế' : 'dự báo'} ${kpiId}`}>
+      <rect x={plotLeft} y={plotTop} width={plotRight - plotLeft} height={plotBottom - plotTop} rx="10" className="chartPlotSurface" />
+      <rect x={Math.max(plotLeft, x(month - 1) - 12)} y={plotTop} width="24" height={plotBottom - plotTop} rx="8" className="chartCurrentBand" />
       <rect x={plotLeft} y={plotTop} width={plotRight - plotLeft} height={plotBottom - plotTop} className="chartPlotDismiss" onPointerDown={() => setSelectedIndex(null)} />
       {gridValues.map((value, index) => <g key={`${value}-${index}`}><line x1={plotLeft} y1={y(value)} x2={plotRight} y2={y(value)} className={`chartGrid chartGrid${index}`} /><text x={plotLeft - 7} y={y(value) + 3.5} textAnchor="end" className="chartAxisLabel">{axisLabel(value, step)}</text></g>)}
       <path d={planPath} className="chartPlan"/><path d={actualPath} className="chartActual"/>{mode === 'forecast' && forecast && <path d={forecastPath} className="chartForecast"/>}
@@ -530,7 +536,7 @@ function MonthlyActualTargetChart({ data, kpiId }: { data: DashboardBootstrap; k
   const axis=niceAxisScale(values);
   const {min,max,step,ticks:grid}=axis;
   const span=Math.max(max-min,step||1);
-  const plotLeft=50,plotRight=374,plotTop=24,plotBottom=132;
+  const plotLeft=58,plotRight=374,plotTop=22,plotBottom=132;
   const x=(i:number)=>plotLeft+i*((plotRight-plotLeft)/11), y=(v:number)=>plotBottom-((v-min)/span)*(plotBottom-plotTop);
   const [selected,setSelected]=useState<number|null>(null), [hovered,setHovered]=useState<number|null>(null);
   useEffect(()=>{setSelected(null);setHovered(null)},[data.period,kpiId]);
@@ -544,6 +550,8 @@ function MonthlyActualTargetChart({ data, kpiId }: { data: DashboardBootstrap; k
   return <div className="historyChartWrap interactiveChartWrap adaptiveMonthlyChart" onMouseLeave={()=>setHovered(null)}>
     {chartDisplayUnit(history) && <div className="chartUnitLabel">Đơn vị: <b>{chartDisplayUnit(history)}</b></div>}
     <svg className="historyChart" viewBox="0 0 390 158" role="img" aria-label={`Biểu đồ cột thực hiện và mốc kế hoạch ${kpiId}`}>
+      <rect x={plotLeft} y={plotTop} width={plotRight - plotLeft} height={plotBottom - plotTop} rx="10" className="chartPlotSurface" />
+      <rect x={Math.max(plotLeft, x(currentIndex) - 12)} y={plotTop} width="24" height={plotBottom - plotTop} rx="8" className="chartCurrentBand" />
       {grid.map((v,i)=><g key={i}><line x1={plotLeft} x2={plotRight} y1={y(v)} y2={y(v)} className={`chartGrid chartGrid${i}`}/><text x={plotLeft-7} y={y(v)+3.5} textAnchor="end" className="chartAxisLabel">{axisLabel(v,step)}</text></g>)}
       {points.map((point,i)=>{const av=numericValue(point?.actual),pv=numericValue(point?.planMonth),cx=x(i),showActual=i<month&&av!==undefined;return <g key={i} className={`monthlyBarGroup ${active===i?'active':''}`}>
         {showActual&&<rect x={cx-barWidth/2} y={y(av!)} width={barWidth} height={Math.max(1,plotBottom-y(av!))} rx="4" className="monthlyActualBar"/>}
@@ -581,6 +589,8 @@ function SamePeriodColumnsChart({ data, kpiId }: { data: DashboardBootstrap; kpi
   const ca=numericValue(active===null?undefined:current[active]?.actual),pa=numericValue(active===null?undefined:prior[active]?.actual),delta=changeDelta(ca,pa),hasDetail=active!==null&&(ca!==undefined||pa!==undefined);
   return <div className="historyChartWrap interactiveChartWrap samePeriodColumns" onMouseLeave={()=>setHovered(null)}>
     {chartDisplayUnit(history) && <div className="chartUnitLabel">Đơn vị: <b>{chartDisplayUnit(history)}</b></div>}<svg className="historyChart" viewBox="0 0 390 158" role="img" aria-label="Biểu đồ cột cùng kỳ">
+      <rect x={plotLeft} y={plotTop} width={plotRight - plotLeft} height={plotBottom - plotTop} rx="10" className="chartPlotSurface" />
+      <rect x={Math.max(plotLeft, x(month - 1) - 12)} y={plotTop} width="24" height={plotBottom - plotTop} rx="8" className="chartCurrentBand" />
       {grid.map((v,i)=><g key={i}><line x1={plotLeft} x2={plotRight} y1={y(v)} y2={y(v)} className={`chartGrid chartGrid${i}`}/><text x={plotLeft-7} y={y(v)+3.5} textAnchor="end" className="chartAxisLabel">{axisLabel(v,step)}</text></g>)}
       {current.map((point,i)=>{const cv=numericValue(point?.actual),pv=numericValue(prior[i]?.actual),cx=x(i);return <g key={i}>{pv!==undefined&&<rect x={cx-11} y={y(pv)} width="9" height={plotBottom-y(pv)} rx="3" className="samePriorBar"/>}{i<month&&cv!==undefined&&<rect x={cx+2} y={y(cv)} width="9" height={plotBottom-y(cv)} rx="3" className="sameCurrentBar"/>}<text x={cx} y="151" textAnchor="middle" className={active===i?'chartLabel current':i===month-1?'chartLabel currentPeriod':'chartLabel'}>{`T${i+1}`}</text></g>})}
       <rect x={plotLeft-12} y={plotTop} width={plotRight-plotLeft+24} height={plotBottom-plotTop+24} className="chartScrubberLayer" onPointerDown={(event)=>{event.currentTarget.setPointerCapture?.(event.pointerId);setSelected(pick(event))}} onPointerMove={(event)=>{const idx=pick(event);if(event.pointerType==='mouse'&&event.buttons===0&&selected===null)setHovered(idx);else if(event.buttons!==0||event.pointerType==='touch')setSelected(idx)}}/>
