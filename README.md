@@ -1,132 +1,116 @@
-# App Điều hành SXKD – Hybrid V1
+# App Điều hành SXKD — Production V1.8.5
 
-Phương án triển khai tối ưu cho giai đoạn hiện tại:
+Dashboard điều hành SXKD dùng **Next.js/Vercel + Google Apps Script + Google Sheets**. Production chỉ hiển thị dữ liệu PDF đã được duyệt vào `06_KPI_HISTORY`; không dùng số demo/seed làm dữ liệu chính thức.
 
-**Vercel / Next.js frontend + Apps Script API tạm thời + Google Sheets database.**
+## Kiến trúc
 
-Bản này đã được seed bằng dữ liệu thực tế từ 2 PDF:
-- `1.PL1 Biểu mẫu thống kê-BC ĐHSX 7.2026.pdf`
-- `4.Tổng hợp Báo cáo ĐHSX - BC ĐHSX 8.2026.pdf`
+```text
+PDF báo cáo
+  ↓
+PDF.js đọc trên trình duyệt
+  ↓
+Parser V1.8.3 Production
+  ↓
+03_PDF_STAGING
+  ↓ review / xác nhận
+06_KPI_HISTORY + 07_PERIOD_SUMMARY
+  ↓
+Apps Script API
+  ↓
+Next.js / Vercel
+  ↓
+Dashboard · Cảnh báo · Trợ lý điều hành · Hành động
+```
 
-## 1. Vì sao chọn Hybrid
+Nguyên tắc dữ liệu: **không thay đổi số thực hiện/kế hoạch đã duyệt khi nâng cấp giao diện hoặc logic phân tích**. Mọi hiệu chỉnh sau duyệt phải đi qua chức năng correction và được ghi `98_CHANGE_LOG`/`MANUAL_OVERRIDE`.
 
-- Dựng UI 5 tab bằng Next.js/Vercel, dễ mở rộng và tối ưu mobile.
-- Chưa phải viết lại toàn bộ backend Google ngay; Apps Script tiếp tục đọc/ghi Sheets.
-- Frontend chỉ gọi `/api/dashboard` trên Vercel. Route này gọi Apps Script server-to-server; nếu chưa cấu hình Apps Script thì app tự chạy bằng PDF seed đi kèm.
-- Khi backend Apps Script ổn định, có thể thay dần bằng Google Sheets API mà không phải làm lại giao diện.
+## V1.8.5 Stabilization
 
-## 2. Chạy local ngay
+V1.8.5 tập trung tăng độ tin cậy, không thêm số liệu giả:
+
+- Giữ nguyên KPI/history đã duyệt.
+- Tách rõ số KPI app đang theo dõi với tổng số chỉ tiêu của báo cáo nguồn.
+- Health Score chỉ chấm trên thành phần có dữ liệu thực; hiển thị Data Coverage và Confidence.
+- KPI `direction=info` không kéo Health Score lên/xuống.
+- Forecast, Early Warning và Health Score dùng chung một Forecast engine.
+- Forecast cần tối thiểu 6 kỳ hợp lệ; tự phát hiện điểm gãy khi lũy kế bị đổi mặt bằng và không nối hai chuỗi khác nhau.
+- Action Center không tự sinh deadline/progress và phân biệt `Theo báo cáo` / `Gợi ý hệ thống` / `Người dùng tạo`.
+- Dashboard có cache ngắn 60 giây; cache được xóa sau khi duyệt PDF.
+- Có kiểm tra tự động TypeScript, Production build và đồng bộ KPI catalog.
+
+## Môi trường Production
+
+```env
+APPS_SCRIPT_API_URL=https://script.google.com/macros/s/.../exec
+APPS_SCRIPT_API_KEY=...
+PDF_ADMIN_PIN=...
+PDF_ADMIN_SECRET=...
+WEATHER_USER_AGENT=sxkd-dashboard/1.8.5 contact@example.com
+AI_MODE=local
+```
+
+`PDF_ADMIN_SECRET` nên là secret riêng, không dùng chung với API key. API health chỉ trả trạng thái cấu hình, không trả giá trị secret.
+
+## Chạy local
 
 Yêu cầu Node.js >= 20.9.
 
 ```bash
-npm install
+npm ci
+npm run check
 npm run dev
 ```
 
-Mở:
-
-```text
-http://localhost:3000
-```
-
-Không cần Google Sheet ở bước đầu: app sẽ hiển thị dữ liệu seed từ 2 PDF.
-
-Kiểm tra API:
-
-```text
-http://localhost:3000/api/health
-http://localhost:3000/api/dashboard
-```
-
-## 3. Kết nối Google Sheets qua Apps Script
-
-Xem `apps-script/README.md`.
-
-Sau khi deploy Apps Script, tạo `.env.local`:
-
-```env
-APPS_SCRIPT_API_URL=https://script.google.com/macros/s/...../exec
-APPS_SCRIPT_API_KEY=chuoi-bi-mat-cua-ban
-```
-
-Khởi động lại:
+Kiểm tra Production build:
 
 ```bash
-npm run dev
+npm run build
 ```
 
-Trên header app, nhãn dữ liệu sẽ chuyển từ **PDF seed** sang **Google Sheets**.
-
-## 4. Deploy Vercel
-
-Cách 1: đưa source lên GitHub và Import Project trong Vercel.
-
-Cách 2 dùng CLI:
+Kiểm tra consistency:
 
 ```bash
-npm i -g vercel
-vercel
+npm run verify
 ```
 
-Sau khi deploy, vào Project → Settings → Environment Variables để khai báo:
+`npm run verify` kiểm tra version, KPI catalog TypeScript ↔ Apps Script, Forecast engine thống nhất, Action Center không tự tạo deadline và loại bỏ dấu vết `USE_DEMO_DATA` khỏi source Production.
 
-- `APPS_SCRIPT_API_URL`
-- `APPS_SCRIPT_API_KEY`
+## Nhập PDF
 
-Deploy lại.
+Mở `/pdf-import` và nhập từng kỳ theo thứ tự thời gian.
 
-## 5. 5 tab đã triển khai
+Luồng chuẩn:
 
-### Điều hành
-- 66 KPI: 60 đạt, 2 đạt một phần, 4 không đạt.
-- KPI chính: điện thương phẩm, doanh thu, tổn thất, thu tiền, đo xa, ĐTXD.
-- Cảnh báo ưu tiên và giải pháp tháng 8.
+1. Chọn PDF.
+2. `Đọc & phân tích PDF`.
+3. Kiểm tra kỳ dữ liệu hệ thống tự nhận từ nội dung PDF.
+4. Xử lý `Cần kiểm tra` / `Xung đột`.
+5. Duyệt staging → `06_KPI_HISTORY`.
+6. Kiểm tra Dashboard.
 
-### Lĩnh vực
-- Kinh doanh.
-- Khách hàng & DVKH.
-- Đo xa.
-- Kỹ thuật.
-- Đầu tư & Tài chính.
-- Nhân sự & Văn hóa.
+Backend chống trùng bằng fingerprint + parser version và `ROW_KEY = PERIOD|KPI_ID`. Nếu cùng PDF đã được duyệt bằng cùng parser, hệ thống không tạo thêm dữ liệu chính thức.
 
-### Phân tích
-- Điện thương phẩm: TH tháng 7, lũy kế 7 tháng, KH năm.
-- SAIFI / SAIDI / MAIFI.
-- Pareto nguyên nhân sự cố.
-- ĐTXD / SCL.
+## Health / System info
 
-**Không tạo số giả cho T1–T6** khi 2 PDF không có chuỗi tháng đầy đủ.
+```text
+/api/health
+```
 
-### Cảnh báo
-- Cảnh báo nghiệp vụ theo đánh giá báo cáo.
-- Hai sai khác giữa 2 PDF được tách thành `Kiểm tra dữ liệu nguồn`.
+Endpoint hiển thị an toàn:
 
-### Kế hoạch
-- Các nhóm giải pháp/kế hoạch tháng 8 trích từ báo cáo.
-- Không tự sinh deadline hay % tiến độ khi PDF không có.
+- App version.
+- Parser version.
+- Data schema version.
+- Apps Script configured hay chưa.
+- PDF Admin có dedicated secret hay chưa.
+- Weather configured hay chưa.
 
-## 6. Hai sai khác nguồn đã phát hiện
+Không endpoint nào được phép trả PIN, API key hoặc secret.
 
-1. Kế hoạch giá bán điện bình quân:
-   - PL1: **2.295 đ/kWh**.
-   - Báo cáo tổng hợp: **2.259 đ/kWh**.
+## Quy ước phiên bản
 
-2. Lũy kế tiết kiệm điện:
-   - PL1: **74,13 Tr.kWh**.
-   - Báo cáo tổng hợp: **74,40 Tr.kWh**.
+- `APP_VERSION`: giao diện/logic điều hành.
+- `PDF_PARSER_VERSION`: quy tắc đọc PDF.
+- `DATA_SCHEMA_VERSION`: schema Apps Script/Google Sheets.
 
-App không tự chọn số nào đúng. Khi dùng Google Sheets, hai trường này nằm ở `03_PDF_REVIEW` để người dùng xác nhận.
-
-## 7. Giai đoạn tiếp theo
-
-Sau khi V1 chạy ổn:
-
-1. Hoàn thiện danh mục đủ 66 KPI trong `01_DM_CHITIEU`.
-2. Nạp PDF hàng tháng bằng PDF.js.
-3. Parser theo lĩnh vực → Staging.
-4. Kiểm tra bất thường / sai khác nguồn.
-5. Duyệt và ghi Google Sheets.
-6. Tự hình thành chuỗi biểu đồ T1–T12.
-7. Mở UI hiệu chỉnh; backend đã có nền móng `correctKpi` + `98_CHANGE_LOG`.
+V1.8.5 không tự sửa số liệu KPI đã duyệt. Thay đổi logic Health/Forecast chỉ ảnh hưởng **chỉ số phân tích được tính từ dữ liệu**, không thay đổi dữ liệu gốc.
