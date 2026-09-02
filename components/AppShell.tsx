@@ -9,6 +9,7 @@ import type { WeatherBundle } from '@/types/weather';
 import { buildOperationsAdvice, weatherAdviceForKpi } from '@/lib/weather-advisor';
 import { buildHealthModel } from '@/lib/health-score';
 import { buildEarlyWarnings } from '@/lib/forecast-v2';
+import { buildUnifiedForecast, forecastConfidenceLabel } from '@/lib/forecast-core';
 import { buildExecutiveBrief } from '@/lib/executive-brief';
 import { mergeActionState, seedActions } from '@/lib/action-engine';
 import HealthScoreCard from '@/components/dashboard/HealthScoreCard';
@@ -17,7 +18,7 @@ import ActionCenter from '@/components/actions/ActionCenter';
 
 const AiCommandCenter = dynamic(() => import('@/components/ai/AiCommandCenter'), {
   ssr: false,
-  loading: () => <div className="aiLazyLoading"><span className="loader"/><b>Đang mở AI Điều hành…</b></div>,
+  loading: () => <div className="aiLazyLoading"><span className="loader"/><b>Đang mở Trợ lý điều hành…</b></div>,
 });
 
 type MainTab = 'home' | 'alerts' | 'ai' | 'plans';
@@ -72,7 +73,7 @@ const DEFAULT_COMPARE:ComparisonSelection = {
 const navTabs: { id: MainTab; label: string; icon: string }[] = [
   { id: 'home', label: 'Trang chủ', icon: '⌂' },
   { id: 'alerts', label: 'Cảnh báo', icon: '△' },
-  { id: 'ai', label: 'AI', icon: '✦' },
+  { id: 'ai', label: 'Trợ lý', icon: '✦' },
   { id: 'plans', label: 'Kế hoạch', icon: '▣' },
 ];
 
@@ -293,47 +294,6 @@ function statusToneClass(tone: Tone) {
   return 'neutral';
 }
 
-function forecastFor(history: MetricHistory, period: string) {
-  const points = Array.isArray(history.points) ? history.points : [];
-  const currentIndex = points.findIndex((point) => point.period === period);
-  if (currentIndex < 0) return null;
-  const window = points.slice(Math.max(0, currentIndex - 5), currentIndex + 1);
-  if (window.length < 6) return null;
-  const values = window.map((point) => numericValue(point.actual)).filter((value): value is number => value !== undefined);
-  if (values.length < 6) return null;
-  const n = values.length;
-  const meanX = (n - 1) / 2;
-  const meanY = values.reduce((a, b) => a + b, 0) / n;
-  let numerator = 0;
-  let denominator = 0;
-  values.forEach((value, index) => {
-    numerator += (index - meanX) * (value - meanY);
-    denominator += (index - meanX) ** 2;
-  });
-  const slope = denominator ? numerator / denominator : 0;
-  const intercept = meanY - slope * meanX;
-  const [year, monthText] = period.split('-');
-  const month = Number(monthText);
-  const futureCount = Math.max(0, 12 - month);
-  const future = Array.from({ length: futureCount }, (_, offset) => Math.max(0, intercept + slope * (n + offset)));
-  const current = points[currentIndex];
-  const yearActual = points.filter((point) => point.period.startsWith(year) && Number(point.period.slice(5)) <= month).map((point) => numericValue(point.actual)).filter((value): value is number => value !== undefined);
-  let yearEnd: number;
-  const currentYtd = numericValue(current.ytd);
-  if (history.aggregate === 'sum') yearEnd = (currentYtd ?? yearActual.reduce((a, b) => a + b, 0)) + future.reduce((a, b) => a + b, 0);
-  else if (history.aggregate === 'avg') yearEnd = [...yearActual, ...future].reduce((a, b) => a + b, 0) / Math.max(1, yearActual.length + future.length);
-  else yearEnd = future.length ? future[future.length - 1] : (numericValue(current.actual) ?? 0);
-  const nextMonth = future[0] ?? numericValue(current.actual) ?? 0;
-  const annualPlan = history.annualPlans?.[year];
-  return {
-    future,
-    nextMonth,
-    yearEnd,
-    annualPlan,
-    confidence: currentIndex >= 11 ? 'Cao' : 'Trung bình',
-  };
-}
-
 function smoothChartPath(values: number[], x: (index: number) => number, y: (value: number) => number) {
   const segments: { index: number; value: number }[][] = [];
   let active: { index: number; value: number }[] = [];
@@ -468,7 +428,7 @@ function HistoryChart({ data, kpiId, mode }: { data: DashboardBootstrap; kpiId: 
   const historyPoints = Array.isArray(history.points) ? history.points : [];
   const slots = useMemo(() => Array.from({ length: 12 }, (_, index) => historyPoints.find((point) => point.period === `${year}-${String(index + 1).padStart(2, '0')}`)), [historyPoints, year]);
   const priorSlots = useMemo(() => Array.from({ length: 12 }, (_, index) => historyPoints.find((point) => point.period === `${Number(year) - 1}-${String(index + 1).padStart(2, '0')}`)), [historyPoints, year]);
-  const forecast = useMemo(() => forecastFor(history, data.period), [history, data.period]);
+  const forecast = useMemo(() => buildUnifiedForecast(history, data.period), [history, data.period]);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   useEffect(() => { setSelectedIndex(null); setHoveredIndex(null); }, [data.period, kpiId, mode]);
@@ -694,25 +654,22 @@ function SamePeriodPanel({ data, kpiId }: { data: DashboardBootstrap; kpiId: str
 function ForecastPanel({ data, kpiId }: { data: DashboardBootstrap; kpiId: string }) {
   const history = historyForKpi(data, kpiId);
   if (!history) return <div className="lockedPanel"><span>⌁</span><b>Chưa có dữ liệu lịch sử</b></div>;
-  const forecast = forecastFor(history, data.period);
-  if (!forecast) return <div className="lockedPanel"><span>⌁</span><b>Chưa đủ dữ liệu để dự báo</b><p>Cần tối thiểu 6 kỳ liên tiếp.</p></div>;
-  const annualPlan = forecast.annualPlan;
-  const directionGood = annualPlan === undefined
-    ? undefined
-    : history.direction === 'lower'
-      ? forecast.yearEnd <= annualPlan
-      : history.direction === 'higher'
-        ? forecast.yearEnd >= annualPlan
-        : true;
+  const forecast = buildUnifiedForecast(history, data.period);
+  if (!forecast) return <div className="lockedPanel"><span>⌁</span><b>Chưa đủ dữ liệu để dự báo</b><p>Cần tối thiểu 6 kỳ hợp lệ sau điểm gãy dữ liệu gần nhất.</p></div>;
+  const directionGood = forecast.projectedRatio === undefined ? undefined : forecast.projectedRatio >= 100;
   return (
     <>
       <HistoryChart data={data} kpiId={kpiId} mode="forecast" />
       <div className="forecastStats">
         <div><small>Tháng kế tiếp</small><b>{metricFormat(history, forecast.nextMonth)}</b></div>
         <div><small>Dự báo cuối năm</small><b>{metricFormat(history, forecast.yearEnd)}</b></div>
-        <div className={directionGood === undefined ? 'neutral' : directionGood ? 'good' : 'risk'}><small>Khả năng đạt KH</small><b>{directionGood === undefined ? 'Chưa có KH năm' : directionGood ? 'Có khả năng đạt' : 'Có nguy cơ không đạt'}</b><em>Độ tin cậy: {forecast.confidence}</em></div>
+        <div className={directionGood === undefined ? 'neutral' : directionGood ? 'good' : 'risk'}>
+          <small>Khả năng đạt KH</small>
+          <b>{directionGood === undefined ? 'Chưa đủ cơ sở so KH năm' : directionGood ? 'Có khả năng đạt' : 'Có nguy cơ không đạt'}</b>
+          <em>Tin cậy: {forecastConfidenceLabel(forecast.confidence)} · độ phủ {forecast.coverage.toLocaleString('vi-VN',{maximumFractionDigits:0})}%</em>
+        </div>
       </div>
-      <p className="forecastNote">Dự báo DEMO dùng xu hướng tuyến tính 6 kỳ gần nhất để kiểm thử giao diện; không phải số liệu chính thức.</p>
+      <p className="forecastNote">{forecast.basis} Dự báo là tín hiệu tham khảo điều hành, không thay thế số thực hiện hoặc kế hoạch chính thức.</p>
     </>
   );
 }
@@ -757,7 +714,7 @@ function CompactHeader({ data, openSource, openWeather, exportData, onPeriodChan
   return (
     <header className="compactHeader">
       <div className="headerBrand">✦ EVN</div>
-      <h1>Điều hành SXKD{data.dataMode === 'demo' && <em className="demoChip">DEMO</em>}</h1>
+      <h1>Điều hành SXKD</h1>
       <div className="headerActions">
         <div className={`periodGroup ${periodLoading ? 'loading' : ''}`} title="Chọn năm và tháng báo cáo">
           <select value={selectedYear} onChange={(e)=>changeYear(e.target.value)} aria-label="Chọn năm" disabled={periodLoading}>
@@ -778,22 +735,27 @@ function CompactHeader({ data, openSource, openWeather, exportData, onPeriodChan
 }
 
 function SummaryCompact({ data }: { data: DashboardBootstrap }) {
+  const tracked = data.fields.reduce((sum, field) => sum + field.items.length, 0);
   const total = Math.max(data.summary.total, 1);
   const pass = data.summary.pass / total * 100;
   const partial = data.summary.partial / total * 100;
   const fail = data.summary.fail / total * 100;
   return (
-    <section className="summaryCompact" aria-label="Tóm tắt KPI">
-      <div className="summaryNumbers">
-        <span><b>{data.summary.total}</b><small>Tổng</small></span>
+    <section className="summaryCompact summaryV185" aria-label="Tóm tắt KPI">
+      <div className="summaryScopeRow">
+        <div><b>{tracked}</b><span><strong>KPI đang theo dõi trên App</strong><small>Dùng cho biểu đồ, cảnh báo và phân tích</small></span></div>
+        <div><b>{data.summary.pass}/{data.summary.total}</b><span><strong>Chỉ tiêu đạt theo báo cáo nguồn</strong><small>Giữ nguyên tổng hợp của kỳ báo cáo</small></span></div>
+      </div>
+      <div className="summaryNumbers reportSummaryNumbers">
+        <span><b>{data.summary.total}</b><small>Tổng nguồn</small></span>
         <span className="success"><b>{data.summary.pass}</b><small>Đạt</small></span>
         <span className="warning"><b>{data.summary.partial}</b><small>Một phần</small></span>
         <span className="danger"><b>{data.summary.fail}</b><small>Không đạt</small></span>
       </div>
       <div className="segmentedBar" aria-hidden="true">
-        <i className="segPass" style={{ width: `${pass}%` }} />
-        <i className="segPartial" style={{ width: `${partial}%` }} />
-        <i className="segFail" style={{ width: `${fail}%` }} />
+        <i className="segPass" style={{ width: pass + '%' }} />
+        <i className="segPartial" style={{ width: partial + '%' }} />
+        <i className="segFail" style={{ width: fail + '%' }} />
       </div>
     </section>
   );
@@ -1119,7 +1081,7 @@ function KpiDetail({ data, domainId, kpiId, favoriteKpis, toggleKpiFavorite, bac
       <section className="compactSection">
         <div className="sectionHeading"><div><b>Giải pháp & Tư vấn</b><small>Vuốt ngang, chạm để xem chi tiết</small></div></div>
         <div className="horizontalCarousel adviceCarousel">
-          {official.slice(0, 2).map((plan) => <button key={plan.id} className="carouselCard advice official" onClick={openAdvice}><span>{data.dataMode === 'demo' ? 'Giải pháp DEMO' : 'Theo báo cáo'}</span><b>{plan.title}</b><small>{plan.owner}</small></button>)}
+          {official.slice(0, 2).map((plan) => <button key={plan.id} className="carouselCard advice official" onClick={openAdvice}><span>Theo báo cáo</span><b>{plan.title}</b><small>{plan.owner}</small></button>)}
           {(p.advice ?? []).slice(0, 2).map((text, i) => <button key={`${item.id}-advice-${i}`} className="carouselCard advice system" onClick={openAdvice}><span>Gợi ý hệ thống</span><b>{text}</b><small>Chạm để xem và đưa vào kế hoạch</small></button>)}
           {weatherTips.slice(0,2).map((text,i)=><button key={`${item.id}-weather-${i}`} className="carouselCard advice weather" onClick={openAdvice}><span>Thời tiết địa bàn</span><b>{text}</b><small>Gợi ý điều hành hiện tại</small></button>)}
         </div>
@@ -1326,16 +1288,16 @@ export default function AppShell() {
   let sheetTitle = '';
   if (sheet?.kind === 'health') {
     sheetTitle = 'Sức khỏe SXKD';
-    sheetContent = <div className="healthSheet"><div className={`healthSheetHero ${healthModel?.band ?? 'good'}`}><small>Điểm sức khỏe toàn đơn vị</small><b>{healthModel?.overall.toLocaleString('vi-VN',{maximumFractionDigits:1}) ?? '—'}<em>/100</em></b><span>Điểm tổng hợp từ tiến độ kế hoạch, xu hướng, cùng kỳ, forecast và độ ổn định.</span></div><div className="healthDomainList">{healthModel?.domains.slice().sort((a,b)=>a.score-b.score).map((domain)=><button key={domain.domainId} onClick={()=>{setSheet(null);openDomain(domain.domainId)}}><div><b>{domain.title}</b><small>{domain.kpis.filter((kpi)=>kpi.band==='risk'||kpi.band==='watch').length} KPI cần theo dõi</small></div><strong>{domain.score.toLocaleString('vi-VN',{maximumFractionDigits:1})}</strong><i>›</i></button>)}</div></div>;
+    sheetContent = <div className="healthSheet"><div className={`healthSheetHero ${healthModel?.band ?? 'good'}`}><small>Điểm sức khỏe toàn đơn vị</small><b>{healthModel?.overall.toLocaleString('vi-VN',{maximumFractionDigits:1}) ?? '—'}<em>/100</em></b><span>Chỉ chấm trên thành phần có dữ liệu thực · độ phủ {healthModel?.coverage.toLocaleString('vi-VN',{maximumFractionDigits:0}) ?? '—'}% · tin cậy {healthModel?.confidence==='high'?'cao':healthModel?.confidence==='medium'?'trung bình':'thấp'}.</span></div><div className="healthDomainList">{healthModel?.domains.slice().sort((a,b)=>a.score-b.score).map((domain)=><button key={domain.domainId} onClick={()=>{setSheet(null);openDomain(domain.domainId)}}><div><b>{domain.title}</b><small>{domain.kpis.filter((kpi)=>kpi.band==='risk'||kpi.band==='watch').length} KPI cần theo dõi</small></div><strong>{domain.score.toLocaleString('vi-VN',{maximumFractionDigits:1})}</strong><i>›</i></button>)}</div></div>;
   } else if (sheet?.kind === 'action') {
     const action=actions.find((row)=>row.id===sheet.actionId);
     if(action){
       sheetTitle='Chi tiết hành động';
-      sheetContent=<div className="actionSheet"><div className="actionSheetHero"><span className={`actionPriority ${action.priority}`}>{action.priority==='high'?'Cao':action.priority==='medium'?'Trung bình':'Bình thường'}</span><h3>{action.title}</h3><p>{action.owner}{action.sourceKpiLabel?` · KPI ${action.sourceKpiLabel}`:''}</p></div><div className="actionSheetGrid"><div><small>Trạng thái</small><b>{action.status==='done'?'Hoàn thành':action.status==='overdue'?'Quá hạn':action.status==='doing'?'Đang làm':'Mới'}</b></div><div><small>Tiến độ</small><b>{action.progress}%</b></div><div><small>Thời hạn</small><b>{action.dueDate??'Chưa đặt'}</b></div><div><small>Nguồn</small><b>{action.source}</b></div></div><section><b>Mục tiêu</b><p>{action.objective}</p></section><section><b>Nội dung thực hiện</b><ol>{action.steps.map((step)=><li key={step}>{step}</li>)}</ol></section><section><b>Kết quả mong đợi</b><p>{action.expectedResult}</p></section>{action.measure&&<section><b>Tiêu chí theo dõi</b><p>{action.measure}</p></section>}<div className="actionSheetButtons"><button onClick={()=>updateAction(action.id,{status:'doing',progress:Math.max(action.progress,55)})}>Đang thực hiện</button><button className="done" onClick={()=>updateAction(action.id,{status:'done',progress:100})}>✓ Hoàn thành</button></div></div>;
+      sheetContent=<div className="actionSheet"><div className="actionSheetHero"><span className={`actionPriority ${action.priority}`}>{action.priority==='high'?'Cao':action.priority==='medium'?'Trung bình':'Bình thường'}</span><h3>{action.title}</h3><p>{action.owner}{action.sourceKpiLabel?` · KPI ${action.sourceKpiLabel}`:''}</p></div><div className="actionSheetGrid"><div><small>Trạng thái</small><b>{action.status==='done'?'Hoàn thành':action.status==='overdue'?'Quá hạn':action.status==='doing'?'Đang làm':'Mới'}</b></div><div><small>Tiến độ</small><b>{action.progressConfirmed ? `${action.progress}%` : 'Chưa xác nhận'}</b></div><div><small>Thời hạn</small><b>{action.dueDateConfirmed && action.dueDate ? action.dueDate : 'Chưa có hạn chính thức'}</b></div><div><small>Nguồn</small><b>{action.origin==='official'?'Theo báo cáo':action.origin==='user'?'Người dùng tạo':'Gợi ý hệ thống'}</b></div></div><section><b>Mục tiêu</b><p>{action.objective}</p></section><section><b>Nội dung thực hiện</b><ol>{action.steps.map((step)=><li key={step}>{step}</li>)}</ol></section><section><b>Kết quả mong đợi</b><p>{action.expectedResult}</p></section>{action.measure&&<section><b>Tiêu chí theo dõi</b><p>{action.measure}</p></section>}<div className="actionSheetButtons"><button onClick={()=>updateAction(action.id,{status:'doing',progress:Math.max(action.progress,55)})}>Đang thực hiện</button><button className="done" onClick={()=>updateAction(action.id,{status:'done',progress:100})}>✓ Hoàn thành</button></div></div>;
     }
   } else if (sheet?.kind === 'source') {
     sheetTitle = 'Nguồn dữ liệu';
-    sheetContent = <div className="sourceSheet"><p><b>{data.sourceLabel}</b></p>{data.dataMode === 'demo' && <div className="demoWarning">⚠ Dữ liệu giả lập chỉ để test giao diện, tốc độ, so sánh và Forecast.</div>}<dl><div><dt>Kỳ báo cáo</dt><dd>{periodLabel(data.period)}</dd></div><div><dt>Dữ liệu đến</dt><dd>{data.reportingDate}</dd></div><div><dt>Chế độ</dt><dd>{data.dataMode === 'demo' ? 'DEMO giả lập 2025–2026' : data.dataMode === 'pdf-seed' ? 'Dữ liệu PDF mẫu' : 'Apps Script API'}</dd></div></dl><button className="sheetPrimary" onClick={() => downloadSnapshot(data)}>⇩ Xuất snapshot dữ liệu</button></div>;
+    sheetContent = <div className="sourceSheet"><p><b>{data.sourceLabel}</b></p><dl><div><dt>Kỳ báo cáo</dt><dd>{periodLabel(data.period)}</dd></div><div><dt>Dữ liệu đến</dt><dd>{data.reportingDate}</dd></div><div><dt>Chế độ</dt><dd>Apps Script API</dd></div></dl><button className="sheetPrimary" onClick={() => downloadSnapshot(data)}>⇩ Xuất snapshot dữ liệu</button></div>;
   } else if (sheet?.kind === 'weather') {
     sheetTitle = 'Thời tiết & Gợi ý điều hành';
     sheetContent = <WeatherSheet data={data} weather={weather} />;
@@ -1379,7 +1341,7 @@ export default function AppShell() {
       const exists = customPlans.some((x) => x.sourceKpi === item.label);
       const weatherTips = weatherAdviceForKpi(field.id,item.id,weather);
       sheetTitle = 'Giải pháp & Tư vấn';
-      sheetContent = <div className="adviceSheet"><h3>{item.label}</h3>{official.length > 0 && <div className="sheetAdvice official"><span>{data.dataMode === 'demo' ? 'Giải pháp DEMO' : 'Theo báo cáo'}</span>{official.map((plan) => <p key={plan.id}><b>{plan.title}</b><small>{plan.owner}</small></p>)}</div>}<div className="sheetAdvice system"><span>Gợi ý hệ thống</span><ol>{(p.advice ?? []).map((text) => <li key={text}>{text}</li>)}</ol></div>{weatherTips.length>0 && <div className="sheetAdvice weather"><span>Thời tiết địa bàn</span><ol>{weatherTips.map((text)=><li key={text}>{text}</li>)}</ol></div>}<button className={`sheetPrimary ${exists ? 'done' : ''}`} disabled={exists} onClick={() => { addPlan(field.id, item.id); }}>{exists ? '✓ Đã đưa vào kế hoạch' : '+ Đưa tư vấn vào kế hoạch'}</button></div>;
+      sheetContent = <div className="adviceSheet"><h3>{item.label}</h3>{official.length > 0 && <div className="sheetAdvice official"><span>Theo báo cáo</span>{official.map((plan) => <p key={plan.id}><b>{plan.title}</b><small>{plan.owner}</small></p>)}</div>}<div className="sheetAdvice system"><span>Gợi ý hệ thống</span><ol>{(p.advice ?? []).map((text) => <li key={text}>{text}</li>)}</ol></div>{weatherTips.length>0 && <div className="sheetAdvice weather"><span>Thời tiết địa bàn</span><ol>{weatherTips.map((text)=><li key={text}>{text}</li>)}</ol></div>}<button className={`sheetPrimary ${exists ? 'done' : ''}`} disabled={exists} onClick={() => { addPlan(field.id, item.id); }}>{exists ? '✓ Đã đưa vào kế hoạch' : '+ Đưa tư vấn vào kế hoạch'}</button></div>;
     }
   }
 
