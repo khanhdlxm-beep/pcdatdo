@@ -89,7 +89,9 @@ export function buildUnifiedForecast(history: MetricHistory, period: string): Un
   const breakIndex = detectSeriesBreak(history, all);
   const seriesBreak = breakIndex === undefined ? undefined : all[breakIndex]?.period;
   const usable = breakIndex === undefined ? all : all.slice(breakIndex);
-  if (!usable.length) return null;
+  // Không phát hành Forecast chỉ từ vài điểm. Sáu kỳ là ngưỡng tối thiểu
+  // để tránh biến động ngắn hạn bị trình bày như một xu hướng điều hành.
+  if (usable.length < 6) return null;
 
   const currentMonth = monthOf(period);
   const startMonth = seriesBreak ? monthOf(seriesBreak) : 1;
