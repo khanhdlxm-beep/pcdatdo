@@ -95,9 +95,9 @@ const summaryCompact = `function SummaryCompact({ data }: { data: DashboardBoots
         <span className="danger"><b>{data.summary.fail}</b><small>Không đạt</small></span>
       </div>
       <div className="segmentedBar" aria-hidden="true">
-        <i className="segPass" style={{ width: \\`${pass}%\` }} />
-        <i className="segPartial" style={{ width: \\`${partial}%\` }} />
-        <i className="segFail" style={{ width: \\`${fail}%\` }} />
+        <i className="segPass" style={{ width: pass + '%' }} />
+        <i className="segPartial" style={{ width: partial + '%' }} />
+        <i className="segFail" style={{ width: fail + '%' }} />
       </div>
     </section>
   );
