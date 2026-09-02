@@ -150,6 +150,25 @@ function chartDisplayUnit(history: MetricHistory) {
 }
 
 
+const officialPlanByDomain: Record<string, string[]> = {
+  'kinh-doanh': ['P1', 'P5'],
+  dvkh: ['P5'],
+  'do-xa': ['P1'],
+  'ky-thuat': ['P2', 'P3'],
+  'dau-tu-tai-chinh': ['P4'],
+  'nhan-su': [],
+};
+
+const alertToKpi: Record<string, { domainId: string; kpiId?: string }> = {
+  A_SC: { domainId: 'ky-thuat', kpiId: 'KT_SC' },
+  A_BT: { domainId: 'kinh-doanh' },
+  A_VP: { domainId: 'kinh-doanh' },
+  A_DTXD: { domainId: 'dau-tu-tai-chinh', kpiId: 'DTXD' },
+  A_SCL: { domainId: 'dau-tu-tai-chinh', kpiId: 'SCL' },
+  A_HD: { domainId: 'dvkh', kpiId: 'HDMBD' },
+  A_NS: { domainId: 'nhan-su', kpiId: 'NSLD_KH' },
+};
+
 function defaultCompareFor(period:string, available:string[] = []) : ComparisonSelection {
   const [year,monthText]=period.split('-');
   const month=Number(monthText);
