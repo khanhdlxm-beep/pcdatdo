@@ -2,6 +2,7 @@ import type { MetricHistory, MetricHistoryPoint } from '@/types/dashboard';
 import type { HealthConfidence } from '@/types/intelligence';
 
 export type UnifiedForecast = {
+  future: number[];
   nextMonth: number;
   yearEnd: number;
   annualPlan?: number;
@@ -98,19 +99,17 @@ export function buildUnifiedForecast(history: MetricHistory, period: string): Un
   const model = linearModel(recent);
   if (!model) return null;
 
-  const nextMonthIndex = Math.min(12, currentMonth + 1);
-  const nextMonth = predict(model, nextMonthIndex);
+  const future = Array.from({ length:Math.max(0, 12 - currentMonth) }, (_, offset) => predict(model, currentMonth + offset + 1));
+  const nextMonth = future[0] ?? predict(model, currentMonth);
   const annualPlan = num(history.annualPlans?.[period.slice(0, 4)]);
 
   let yearEnd: number;
   if (history.aggregate === 'sum') {
     const latestYtd = num(usable[usable.length - 1]?.ytd);
     const observed = usable.map((point) => num(point.actual)).filter((value): value is number => value !== undefined);
-    let base = latestYtd ?? observed.reduce((sum, value) => sum + value, 0);
-    for (let month = currentMonth + 1; month <= 12; month++) base += predict(model, month);
-    yearEnd = base;
+    yearEnd = (latestYtd ?? observed.reduce((sum, value) => sum + value, 0)) + future.reduce((sum, value) => sum + value, 0);
   } else {
-    yearEnd = predict(model, 12);
+    yearEnd = future.length ? future[future.length - 1] : predict(model, currentMonth);
   }
 
   // Nếu YTD đã bị reset giữa năm, không so Forecast sau điểm gãy với KH năm cũ.
@@ -127,6 +126,7 @@ export function buildUnifiedForecast(history: MetricHistory, period: string): Un
     : `Dùng ${usable.length} kỳ hợp lệ; độ phủ ${coverage.toLocaleString('vi-VN', { maximumFractionDigits: 0 })}%.`;
 
   return {
+    future,
     nextMonth,
     yearEnd,
     annualPlan,
