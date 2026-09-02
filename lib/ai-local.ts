@@ -169,6 +169,8 @@ export function buildAiRuntimeIndex(
         healthScore: healthRow?.score,
         healthBand: healthRow?.band,
         healthTrend: healthRow?.trend,
+        healthCoverage: healthRow?.coverage,
+        healthConfidence: healthRow?.confidence,
         planScore: healthRow?.planScore,
         trendScore: healthRow?.trendScore,
         samePeriodScore: healthRow?.samePeriodScore,
@@ -195,6 +197,8 @@ export function buildAiRuntimeIndex(
         forecastText: warning?.forecastText,
         projectedRatio: warning?.projectedRatio,
         projectedValue: warning?.projectedValue,
+        forecastConfidence: warning?.confidence,
+        forecastCoverage: warning?.coverage,
 
         openActionCount: actionCount.get(item.id) ?? 0,
       });
@@ -203,10 +207,12 @@ export function buildAiRuntimeIndex(
 
   return {
     period: data.period,
-    totalKpis: data.summary.total,
+    totalKpis: data.fields.reduce((sum, field) => sum + field.items.length, 0),
     overallHealth: health.overall,
     healthBand: health.band,
     healthDelta: health.deltaVsPrevious,
+    healthCoverage: health.coverage,
+    healthConfidence: health.confidence,
     kpis,
     domains: health.domains,
     warnings,
@@ -263,7 +269,7 @@ function kpiEvidence(row: AiKpiSnapshot, period: string) {
 function detailedKpiAnswer(row: AiKpiSnapshot, index: AiRuntimeIndex): AiAnswer {
   const bullets: string[] = [
     `Giá trị hiện tại: ${row.value} · Trạng thái: ${row.status}.`,
-    `Health Score: ${score(row.healthScore)} · ${healthBandLabel(row.healthBand)} · Xu hướng sức khỏe: ${healthTrendLabel(row.healthTrend)}.`,
+    `Health Score: ${score(row.healthScore)} · ${healthBandLabel(row.healthBand)} · Xu hướng sức khỏe: ${healthTrendLabel(row.healthTrend)} · độ phủ ${percent(row.healthCoverage)} · tin cậy ${row.healthConfidence ?? 'thấp'}.`,
   ];
 
   if (row.actual !== undefined || row.planMonth !== undefined) {
@@ -286,7 +292,7 @@ function detailedKpiAnswer(row: AiKpiSnapshot, index: AiRuntimeIndex): AiAnswer 
 
   if (row.forecastText || row.projectedRatio !== undefined || row.projectedValue !== undefined) {
     bullets.push(
-      `Forecast: ${row.forecastText ?? 'Đã có dự báo'}${row.projectedValue !== undefined ? ` · Giá trị dự phóng ${metric(row.projectedValue, row.unit)}` : ''}${row.projectedRatio !== undefined ? ` · Mức dự phóng ${percent(row.projectedRatio)}` : ''}.`,
+      `Forecast: ${row.forecastText ?? 'Đã có dự báo'}${row.projectedValue !== undefined ? ` · Giá trị dự phóng ${metric(row.projectedValue, row.unit)}` : ''}${row.projectedRatio !== undefined ? ` · Mức dự phóng ${percent(row.projectedRatio)}` : ''}${row.forecastCoverage !== undefined ? ` · độ phủ ${percent(row.forecastCoverage)}` : ''}.`,
     );
   }
 
@@ -327,21 +333,21 @@ function detailedKpiAnswer(row: AiKpiSnapshot, index: AiRuntimeIndex): AiAnswer 
 
 function lowestKpis(index: AiRuntimeIndex, count = 5) {
   return [...index.kpis]
-    .filter((row) => row.healthScore !== undefined)
+    .filter((row) => row.healthScore !== undefined && row.direction !== 'info' && (row.healthCoverage ?? 0) > 0)
     .sort((a, b) => (a.healthScore ?? 999) - (b.healthScore ?? 999))
     .slice(0, count);
 }
 
 function highestKpis(index: AiRuntimeIndex, count = 5) {
   return [...index.kpis]
-    .filter((row) => row.healthScore !== undefined)
+    .filter((row) => row.healthScore !== undefined && row.direction !== 'info' && (row.healthCoverage ?? 0) > 0)
     .sort((a, b) => (b.healthScore ?? -1) - (a.healthScore ?? -1))
     .slice(0, count);
 }
 
 function atRiskKpis(index: AiRuntimeIndex, count = 6) {
   return [...index.kpis]
-    .filter((row) => row.warningRisk || row.healthBand === 'risk' || row.healthBand === 'watch')
+    .filter((row) => row.direction !== 'info' && (row.healthCoverage ?? 0) > 0 && (row.warningRisk || row.healthBand === 'risk' || row.healthBand === 'watch'))
     .sort((a, b) => {
       const riskDiff = riskRank(b.warningRisk) - riskRank(a.warningRisk);
       if (riskDiff) return riskDiff;
@@ -358,7 +364,7 @@ function overviewAnswer(index: AiRuntimeIndex): AiAnswer {
 
   return {
     title: 'Tổng quan điều hành đa chiều',
-    summary: `Health Score toàn đơn vị ${score(index.overallHealth)}. Có ${index.warnings.length} cảnh báo forecast và ${open.length} hành động đang mở.`,
+    summary: `Health Score toàn đơn vị ${score(index.overallHealth)} · độ phủ ${percent(index.healthCoverage)} · tin cậy ${index.healthConfidence ?? 'thấp'}. Có ${index.warnings.length} cảnh báo forecast và ${open.length} hành động đang mở.`,
     bullets: [
       `Quy mô: ${index.totalKpis} KPI · ${index.domains.length} lĩnh vực.`,
       `Health: ${score(index.overallHealth)}${index.healthDelta === null ? '' : ` · ${index.healthDelta >= 0 ? '+' : ''}${index.healthDelta.toLocaleString('vi-VN', { maximumFractionDigits: 1 })} điểm so kỳ trước`}.`,
@@ -453,13 +459,13 @@ export function answerExecutiveQuestion(question: string, index: AiRuntimeIndex)
       title: 'Hành động điều hành',
       summary: `Có ${index.actions.filter((action) => action.status !== 'done').length} hành động đang mở; hiển thị các việc ưu tiên nhất.`,
       bullets: open.map((action) =>
-        `${action.title} · owner ${action.owner} · ưu tiên ${action.priority} · trạng thái ${action.status} · tiến độ ${action.progress}%${action.dueDate ? ` · hạn ${action.dueDate}` : ''}.`,
+        `${action.title} · owner ${action.owner} · ưu tiên ${action.priority} · trạng thái ${action.status} · ${action.progressConfirmed ? `tiến độ ${action.progress}%` : 'tiến độ chưa xác nhận'}${action.dueDateConfirmed && action.dueDate ? ` · hạn ${action.dueDate}` : ' · chưa có hạn chính thức'}.`,
       ),
       evidence: open.map((action) =>
         action.sourceKpiLabel ? `Nguồn KPI: ${action.sourceKpiLabel}.` : `Nguồn: ${action.source}.`,
       ),
       suggestedActions: open.slice(0, 4).map((action) =>
-        `Cập nhật ${action.title} trước ${action.dueDate ?? 'mốc giao ban kế tiếp'}.`,
+        action.dueDateConfirmed && action.dueDate ? `Cập nhật ${action.title} trước ${action.dueDate}.` : `Xác nhận tiến độ và thời hạn chính thức cho ${action.title}.`,
       ),
     };
   }
