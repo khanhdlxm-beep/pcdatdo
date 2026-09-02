@@ -5,6 +5,9 @@ const MONTHS: Record<string, string> = {
   Jul:'07', Aug:'08', Sep:'09', Oct:'10', Nov:'11', Dec:'12',
 };
 
+const CACHE_TTL_MS = 60_000;
+const dashboardCache = new Map<string, { expires:number; value:DashboardBootstrap }>();
+
 function normalizePeriod(value: unknown): string | undefined {
   const raw = String(value ?? '').trim();
   if (!raw) return undefined;
@@ -80,6 +83,29 @@ async function fetchBootstrap(baseUrl: string, key: string, period: string) {
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
+function cacheGet(key:string) {
+  const row = dashboardCache.get(key);
+  if (!row) return undefined;
+  if (row.expires <= Date.now()) {
+    dashboardCache.delete(key);
+    return undefined;
+  }
+  return row.value;
+}
+
+function cacheSet(key:string, value:DashboardBootstrap) {
+  dashboardCache.set(key, { expires:Date.now() + CACHE_TTL_MS, value });
+  // Giữ cache nhỏ và dự đoán được trong serverless warm instance.
+  if (dashboardCache.size > 24) {
+    const oldest = dashboardCache.keys().next().value as string | undefined;
+    if (oldest) dashboardCache.delete(oldest);
+  }
+}
+
+export function clearDashboardMemoryCache() {
+  dashboardCache.clear();
+}
+
 export async function loadDashboard(period?: string): Promise<DashboardBootstrap> {
   const url = process.env.APPS_SCRIPT_API_URL;
   const key = process.env.APPS_SCRIPT_API_KEY;
@@ -87,8 +113,15 @@ export async function loadDashboard(period?: string): Promise<DashboardBootstrap
   if (!key) throw new Error('Production chưa cấu hình APPS_SCRIPT_API_KEY.');
 
   const requested = period ? (normalizePeriod(period) ?? period) : 'latest';
+  const cached = cacheGet(requested);
+  if (cached) return cached;
+
   const first = await fetchBootstrap(url, key, requested);
-  if (period) return first;
+  if (period) {
+    cacheSet(requested, first);
+    cacheSet(first.period, first);
+    return first;
+  }
 
   const candidates = Array.from(new Set(
     [...(first.availablePeriods ?? []), first.period]
@@ -97,7 +130,11 @@ export async function loadDashboard(period?: string): Promise<DashboardBootstrap
   )).sort();
   const latest = candidates[candidates.length - 1];
 
-  return latest && first.period !== latest
-    ? fetchBootstrap(url, key, latest)
+  const resolved = latest && first.period !== latest
+    ? await fetchBootstrap(url, key, latest)
     : first;
+
+  cacheSet('latest', resolved);
+  cacheSet(resolved.period, resolved);
+  return resolved;
 }

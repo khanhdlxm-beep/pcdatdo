@@ -7,6 +7,7 @@ import type { ActionItem, AiAnswer, EarlyWarning, ExecutiveBrief, HealthModel } 
 import type { WeatherBundle } from '@/types/weather';
 import { answerExecutiveQuestion, buildAiRuntimeIndex } from '@/lib/ai-local';
 import { buildOperationsAdvice } from '@/lib/weather-advisor';
+import { healthConfidenceLabel } from '@/lib/health-score';
 
 const quickQuestions = [
   'Vấn đề nào cần ưu tiên?',
@@ -39,8 +40,6 @@ export default function AiCommandCenter({
   goAlerts: () => void;
   goPlans: () => void;
 }) {
-  // Index được tạo một lần cho mỗi lần dữ liệu/forecast/action thay đổi.
-  // Mỗi câu hỏi sau đó chỉ chạy trên snapshot đã chuẩn hóa, tránh quét/chuyển đổi dữ liệu lặp lại.
   const aiIndex = useMemo(
     () => buildAiRuntimeIndex(data, health, warnings, actions, brief),
     [data, health, warnings, actions, brief],
@@ -56,10 +55,9 @@ export default function AiCommandCenter({
     [data, weather],
   );
 
-  // Khi đổi kỳ dữ liệu, tránh giữ câu trả lời của kỳ cũ.
   useEffect(() => {
     setAnswer(answerExecutiveQuestion(query.trim() || 'tóm tắt giao ban', aiIndex));
-    // Chỉ refresh tự động khi kỳ dữ liệu đổi. Các thay đổi action vẫn được dùng ở lần hỏi kế tiếp.
+    // Chỉ refresh tự động khi kỳ dữ liệu đổi. Các thay đổi action được dùng ở lần hỏi kế tiếp.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.period]);
 
@@ -74,10 +72,10 @@ export default function AiCommandCenter({
     <>
       <div className="pageTitle aiTitle">
         <div>
-          <small>Executive Intelligence</small>
-          <h2>✦ AI Điều hành</h2>
+          <small>Local Analytics</small>
+          <h2>✦ Trợ lý điều hành</h2>
         </div>
-        <span className="freeAiBadge">AI nội bộ · Free</span>
+        <span className="freeAiBadge">Nội bộ · không gửi dữ liệu ra ngoài</span>
       </div>
 
       <section className="aiHero">
@@ -87,6 +85,7 @@ export default function AiCommandCenter({
             {health.overall.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}
             <em>/100</em>
           </strong>
+          <small>Độ phủ {health.coverage.toLocaleString('vi-VN', { maximumFractionDigits: 0 })}% · tin cậy {healthConfidenceLabel(health.confidence).toLowerCase()}</small>
         </div>
         <p>{brief.summary}</p>
         <div className="aiHeroActions">
@@ -127,7 +126,7 @@ export default function AiCommandCenter({
       <section className="aiQuick">
         <div className="aiSectionTitle">
           <b>Hỏi nhanh</b>
-          <small>Local engine · không gọi API trả phí</small>
+          <small>Rule-based analytics · dùng dữ liệu Production đã nạp</small>
         </div>
         <div>
           {quickQuestions.map((question) => (
@@ -200,7 +199,7 @@ export default function AiCommandCenter({
       <section className="aiDeepPlaceholder">
         <div>
           <b>Phân tích sâu bằng AI API</b>
-          <small>Tùy chọn sau này · không tải khi chưa bật</small>
+          <small>Tùy chọn sau này · chỉ bật khi có cơ chế bảo vệ dữ liệu phù hợp</small>
         </div>
         <button type="button" disabled>Chưa kích hoạt</button>
       </section>

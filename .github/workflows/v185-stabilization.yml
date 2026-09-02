@@ -1,0 +1,53 @@
+name: V1.8.5 Stabilization
+
+on:
+  push:
+    branches:
+      - v1.8.5-stabilization
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  stabilize-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Apply V1.8.5 source cleanup
+        run: |
+          node scripts/v185-codemod.mjs
+          node scripts/v185-ai-codemod.mjs
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck and production verification
+        run: npm run check
+
+      - name: Production build
+        run: npm run build
+
+      - name: Commit codemod output when needed
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "Source already stabilized."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add components/AppShell.tsx app/globals.css package-lock.json lib/ai-local.ts
+          git commit -m "V1.8.5 apply stabilization codemod"
+          git push origin HEAD:v1.8.5-stabilization

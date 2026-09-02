@@ -1,6 +1,6 @@
-# Apps Script backend — V1.8.2 Production
+# Apps Script backend — Data Schema V1.8.2 / App V1.8.5
 
-Backend chính thức dùng Google Sheets làm database và chỉ phục vụ dữ liệu PDF đã duyệt. Không còn seed/demo trong Apps Script.
+Google Sheets là database Production. Apps Script chỉ phục vụ dữ liệu PDF đã duyệt; không dùng seed/demo làm nguồn dữ liệu chính thức.
 
 ## File cần có trong Apps Script
 
@@ -8,72 +8,80 @@ Backend chính thức dùng Google Sheets làm database và chỉ phục vụ d�
 - `PdfImport.gs`
 - `appsscript.json`
 
-Các file migration cũ `V18PeriodRepair.gs` và `V18ProductionUpgrade.gs` đã được tích hợp vào `PdfImport.gs` và không còn cần thiết.
+Các migration cũ `V18PeriodRepair.gs` và `V18ProductionUpgrade.gs` đã được tích hợp vào `PdfImport.gs` và nên xóa khỏi Apps Script nếu còn tồn tại.
 
-## Cập nhật Production
+## Cập nhật backend Production
 
-1. Extensions → Apps Script từ file Google Sheet `Dieu hanh SXKD`.
-2. Thay toàn bộ nội dung `Code.gs` bằng bản trong repository.
-3. Thay toàn bộ nội dung `PdfImport.gs` bằng bản trong repository.
-4. Xóa `V18PeriodRepair.gs` và `V18ProductionUpgrade.gs` nếu còn trong Apps Script.
-5. Save.
-6. Deploy → Manage deployments → Edit → New version → Deploy.
-7. Giữ nguyên Web App URL kết thúc bằng `/exec`.
+1. Mở Google Sheet `Dieu hanh SXKD` → Extensions → Apps Script.
+2. Đối chiếu `Code.gs` và `PdfImport.gs` với repository.
+3. Save.
+4. Deploy → Manage deployments → Edit → New version → Deploy.
+5. Giữ nguyên Web App URL kết thúc bằng `/exec`.
 
-Script Property cần có:
+Script Property bắt buộc:
 
-- `API_KEY`
+```text
+API_KEY=<khớp APPS_SCRIPT_API_KEY trên Vercel>
+```
 
 Vercel Production cần:
 
-- `USE_DEMO_DATA=false`
-- `APPS_SCRIPT_API_URL=<Web App URL /exec>`
-- `APPS_SCRIPT_API_KEY=<giống API_KEY trong Apps Script>`
+```text
+APPS_SCRIPT_API_URL=<Web App URL /exec>
+APPS_SCRIPT_API_KEY=<giống API_KEY>
+PDF_ADMIN_PIN=<PIN quản trị>
+PDF_ADMIN_SECRET=<secret riêng dùng ký phiên quản trị>
+```
 
-## Luồng nhập PDF lịch sử
+## Luồng dữ liệu
 
-`PDF → browser PDF.js → parser → 03_PDF_STAGING → review → 06_KPI_HISTORY → Dashboard`
+```text
+PDF
+→ browser PDF.js
+→ parser
+→ 03_PDF_STAGING
+→ review
+→ 06_KPI_HISTORY
+→ Dashboard
+```
 
-V1.8.2 có các bảo vệ sau:
+Các bảo vệ chính:
 
-- Tự nhận kỳ dữ liệu thực tế từ nội dung PDF. Ví dụ báo cáo họp tháng 08/2025 có thể phản ánh số thực hiện 07/2025; hệ thống dùng kỳ dữ liệu, không dùng tên file.
-- PERIOD luôn được chuẩn hóa `YYYY-MM` và lưu dạng Plain text.
-- Không cho tạo staging nếu nhận dạng được 0 KPI.
-- Không cho Approve staging rỗng.
-- Chống nhập trùng bằng fingerprint của PDF + phiên bản parser.
-- Nếu PDF đã được duyệt bằng parser cũ, parser mới được phép reprocess một lần; import cũ được chuyển sang `SUPERSEDED` sau khi bản mới duyệt thành công.
-- `ROW_KEY = PERIOD|KPI_ID`, vì vậy một KPI chỉ có một dòng chính thức trong một kỳ.
-- `MANUAL_OVERRIDE` không bị PDF mới ghi đè trừ khi chủ động dùng force.
-- NEED_REVIEW và CONFLICT bắt buộc xử lý trước khi duyệt.
-- UNMAPPED không ghi vào KPI_HISTORY cho tới khi được ánh xạ KPI.
-- Ghi HISTORY/STAGING/CHANGELOG theo batch để giảm thời gian chạy Apps Script.
+- Tự nhận kỳ dữ liệu từ nội dung PDF.
+- PERIOD chuẩn hóa `YYYY-MM` và lưu dạng Plain text.
+- Không cho staging/approve rỗng.
+- Chống trùng bằng fingerprint + parser version.
+- Parser mới được phép reprocess PDF cũ; import cũ chỉ bị `SUPERSEDED` sau khi phiên mới duyệt thành công.
+- `ROW_KEY = PERIOD|KPI_ID`: một KPI chỉ có một dòng chính thức trong một kỳ.
+- `MANUAL_OVERRIDE` không bị PDF mới tự ghi đè.
+- `NEED_REVIEW` và `CONFLICT` phải xử lý trước khi duyệt.
+- `UNMAPPED` không ghi vào KPI history cho đến khi ánh xạ.
+- HISTORY/STAGING/CHANGELOG ghi batch để giảm timeout.
 
-## Thứ tự nhập lịch sử khuyến nghị
+## Nguyên tắc V1.8.5
 
-Nhập từng PDF theo thứ tự thời gian từ cũ đến mới. Có thể chọn tháng theo tên báo cáo; parser sẽ tự hiệu chỉnh về kỳ thực hiện được ghi trong PDF.
+Nâng cấp app không được tự sửa giá trị trong `06_KPI_HISTORY`. Health Score, Forecast, Early Warning và Trợ lý điều hành chỉ **đọc** dữ liệu đã duyệt và tính chỉ số phân tích ở lớp ứng dụng.
 
-Sau mỗi PDF:
+Nếu cần sửa số đã duyệt, dùng chức năng correction để tạo `MANUAL_OVERRIDE` và ghi `98_CHANGE_LOG`.
 
-1. `Đọc & phân tích PDF`.
-2. Kiểm tra kỳ mà app tự nhận.
-3. Xử lý `Cần duyệt` / `Xung đột`.
-4. `Duyệt staging → KPI_HISTORY`.
-5. Chuyển sang PDF tiếp theo.
+## Kiểm tra API
 
-Nếu upload lại đúng PDF đã được duyệt bằng cùng parser, backend sẽ báo trùng và không tạo thêm dữ liệu.
+Health:
 
-## Kiểm tra nhanh API
+```text
+?action=health&apiKey=...
+```
 
-GET health:
+Dashboard mới nhất:
 
-`?action=health&apiKey=...`
+```text
+?action=bootstrap&period=latest&apiKey=...
+```
 
-GET dashboard mới nhất:
+Một kỳ cụ thể:
 
-`?action=bootstrap&period=latest&apiKey=...`
+```text
+?action=bootstrap&period=2026-05&apiKey=...
+```
 
-GET một kỳ:
-
-`?action=bootstrap&period=2026-05&apiKey=...`
-
-Lịch sử hiệu chỉnh được ghi trong `98_CHANGE_LOG`.
+Không đưa `API_KEY` vào ảnh chụp, README public hoặc log chia sẻ bên ngoài.
