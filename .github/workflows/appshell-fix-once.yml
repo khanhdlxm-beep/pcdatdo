@@ -1,0 +1,60 @@
+name: AppShell restore required constants
+
+on:
+  push:
+    branches:
+      - optimize-production-v1-8-3
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: optimize-production-v1-8-3
+          fetch-depth: 0
+      - name: Restore non-data routing constants
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('components/AppShell.tsx')
+          s=p.read_text()
+          if 'const officialPlanByDomain' not in s:
+              marker='function defaultCompareFor(period:string, available:string[] = []) : ComparisonSelection {'
+              block="""const officialPlanByDomain: Record<string, string[]> = {
+            'kinh-doanh': ['P1', 'P5'],
+            dvkh: ['P5'],
+            'do-xa': ['P1'],
+            'ky-thuat': ['P2', 'P3'],
+            'dau-tu-tai-chinh': ['P4'],
+            'nhan-su': [],
+          };
+
+          const alertToKpi: Record<string, { domainId: string; kpiId?: string }> = {
+            A_SC: { domainId: 'ky-thuat', kpiId: 'KT_SC' },
+            A_BT: { domainId: 'kinh-doanh' },
+            A_VP: { domainId: 'kinh-doanh' },
+            A_DTXD: { domainId: 'dau-tu-tai-chinh', kpiId: 'DTXD' },
+            A_SCL: { domainId: 'dau-tu-tai-chinh', kpiId: 'SCL' },
+            A_HD: { domainId: 'dvkh', kpiId: 'HDMBD' },
+            A_NS: { domainId: 'nhan-su', kpiId: 'NSLD_KH' },
+          };
+
+          """
+              if marker not in s:
+                  raise RuntimeError('defaultCompareFor marker missing')
+              s=s.replace(marker,block+marker,1)
+          p.write_text(s)
+          PY
+      - name: Commit fix
+        run: |
+          if git diff --quiet; then exit 0; fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add components/AppShell.tsx
+          git commit -m 'Restore required dashboard routing constants'
+          git push origin HEAD:optimize-production-v1-8-3
