@@ -236,6 +236,51 @@ function metricRatio(history: MetricHistory, point: MetricHistoryPoint) {
   return actual / plan * 100;
 }
 
+type PlanFocus = 'month' | 'ytd';
+
+function planReferenceValues(history: MetricHistory, point: MetricHistoryPoint | undefined, year: string) {
+  return {
+    month: numericValue(point?.planMonth),
+    ytd: numericValue(point?.planYtd),
+    annual: numericValue(history.annualPlans?.[year]),
+  };
+}
+
+function planSummaryText(history: MetricHistory, point: MetricHistoryPoint | undefined, year: string) {
+  const refs = planReferenceValues(history, point, year);
+  return [
+    `KH tháng ${metricFormat(history, refs.month)}`,
+    `KH lũy kế ${metricFormat(history, refs.ytd)}`,
+    `KH năm ${metricFormat(history, refs.annual)}`,
+  ].join(' · ');
+}
+
+function currentPlanTarget(history: MetricHistory, point: MetricHistoryPoint, year: string) {
+  const refs = planReferenceValues(history, point, year);
+  if (refs.month !== undefined) return { value: refs.month, label: 'KH tháng' };
+  if (history.aggregate === 'snapshot' || history.aggregate === 'avg') {
+    if (refs.ytd !== undefined) return { value: refs.ytd, label: 'KH kỳ' };
+    if (refs.annual !== undefined) return { value: refs.annual, label: 'KH năm' };
+  }
+  return { value: undefined, label: 'KH tháng' };
+}
+
+function PlanReferenceStrip({ history, point, year, focus = 'month' }: {
+  history: MetricHistory;
+  point?: MetricHistoryPoint;
+  year: string;
+  focus?: PlanFocus;
+}) {
+  const refs = planReferenceValues(history, point, year);
+  const missingFocus = focus === 'month' ? refs.month === undefined : refs.ytd === undefined;
+  return <div className="chartPlanReference" aria-label="Các mốc kế hoạch chính thức">
+    <span className={refs.month === undefined ? 'missing' : ''}><small>KH tháng</small><b>{metricFormat(history, refs.month)}</b></span>
+    <span className={refs.ytd === undefined ? 'missing' : ''}><small>KH lũy kế</small><b>{metricFormat(history, refs.ytd)}</b></span>
+    <span className={refs.annual === undefined ? 'missing' : ''}><small>KH năm</small><b>{metricFormat(history, refs.annual)}</b></span>
+    {missingFocus && <em>{focus === 'month' ? 'PDF nguồn chưa có KH tháng; app không tự chia KH năm theo tháng.' : 'PDF nguồn chưa có KH lũy kế cho kỳ này; app không tự nội suy.'}</em>}
+  </div>;
+}
+
 function getPresentation(item: KpiCard, data?: DashboardBootstrap): KpiPresentation {
   const history = data ? historyForKpi(data, item.id) : undefined;
   const point = data && history ? historyPoint(data, item.id) : undefined;
@@ -244,7 +289,6 @@ function getPresentation(item: KpiCard, data?: DashboardBootstrap): KpiPresentat
     const same = historyPoint(data, item.id, previousYearPeriod(data.period));
     const sameChange = same && same.actual !== 0 ? (point.actual / same.actual - 1) * 100 : undefined;
     const year = data.period.slice(0, 4);
-    const annualPlan = history.annualPlans?.[year];
     const relation = history.direction === 'lower' ? 'lte' : history.direction === 'higher' ? 'gte' : 'info';
     const compareText = history.direction === 'info'
       ? 'Thông tin kỳ báo cáo'
@@ -265,7 +309,7 @@ function getPresentation(item: KpiCard, data?: DashboardBootstrap): KpiPresentat
       comparisonRatio: ratio,
       comparisonRelation: relation,
       ytd: metricFormat(history, point.ytd),
-      plan: `KH tháng ${metricFormat(history, point.planMonth)} · KH năm ${metricFormat(history, annualPlan)}`,
+      plan: planSummaryText(history, point, year),
       samePeriod: same ? `${metricFormat(history, same.actual)} (${periodLabel(previousYearPeriod(data.period))})` : undefined,
       insight,
       advice: ['Theo dõi chênh lệch TH/KH tháng và xu hướng các kỳ gần nhất.', 'Khi KPI lệch kế hoạch, ưu tiên xác định nguyên nhân theo lĩnh vực trước khi đưa vào kế hoạch hành động.'],
@@ -414,7 +458,7 @@ function ChartMiniInsight({ history, current, priorMonth, priorYear }: { history
   const planClass = planGap === undefined ? 'neutral' : planGap >= 0 ? 'good' : 'risk';
   const changeClass = (value?: number) => value === undefined ? 'neutral' : value >= 0 ? 'good' : 'risk';
   return <div className="chartMiniInsight" aria-label="Tóm tắt biến động">
-    <span className={planClass}>{planGap === undefined ? 'KH: —' : `${planGap >= 0 ? '✓' : '⚠'} ${Math.abs(planGap).toLocaleString('vi-VN',{maximumFractionDigits:1})}% so KH`}</span>
+    <span className={planClass}>{planGap === undefined ? 'KH tháng: chưa có nguồn' : `${planGap >= 0 ? '✓' : '⚠'} ${Math.abs(planGap).toLocaleString('vi-VN',{maximumFractionDigits:1})}% so KH tháng`}</span>
     <span className={changeClass(yoy)}>{yoy === undefined ? 'Cùng kỳ: —' : `${yoy >= 0 ? '↑' : '↓'} ${Math.abs(yoy).toLocaleString('vi-VN',{maximumFractionDigits:1})}% cùng kỳ`}</span>
     <span className={changeClass(mom)}>{mom === undefined ? 'Tháng trước: —' : `${mom >= 0 ? '↑' : '↓'} ${Math.abs(mom).toLocaleString('vi-VN',{maximumFractionDigits:1})}% tháng trước`}</span>
   </div>;
@@ -429,6 +473,8 @@ function HistoryChart({ data, kpiId, mode }: { data: DashboardBootstrap; kpiId: 
   const slots = useMemo(() => Array.from({ length: 12 }, (_, index) => historyPoints.find((point) => point.period === `${year}-${String(index + 1).padStart(2, '0')}`)), [historyPoints, year]);
   const priorSlots = useMemo(() => Array.from({ length: 12 }, (_, index) => historyPoints.find((point) => point.period === `${Number(year) - 1}-${String(index + 1).padStart(2, '0')}`)), [historyPoints, year]);
   const forecast = useMemo(() => buildUnifiedForecast(history, data.period), [history, data.period]);
+  const annualPlan = numericValue(history.annualPlans?.[year]);
+  const annualPlanForChart = mode === 'ytd' ? annualPlan : undefined;
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
   useEffect(() => { setSelectedIndex(null); setHoveredIndex(null); }, [data.period, kpiId, mode]);
@@ -442,7 +488,7 @@ function HistoryChart({ data, kpiId, mode }: { data: DashboardBootstrap; kpiId: 
     if (index === month - 1) return numericValue(point?.actual) ?? NaN;
     return forecast?.future[index - month] ?? NaN;
   });
-  const all = [...actualValues, ...planValues, ...forecastValues].filter(Number.isFinite) as number[];
+  const all = [...actualValues, ...planValues, ...forecastValues, ...(annualPlanForChart !== undefined ? [annualPlanForChart] : [])].filter(Number.isFinite) as number[];
   if (!all.length) return <div className="lockedPanel"><span>⌁</span><b>Chưa có dữ liệu biểu đồ</b><p>Hãy chọn kỳ có dữ liệu lịch sử.</p></div>;
 
   const axis = niceAxisScale(all);
@@ -472,15 +518,17 @@ function HistoryChart({ data, kpiId, mode }: { data: DashboardBootstrap; kpiId: 
       <rect x={Math.max(plotLeft, x(month - 1) - 12)} y={plotTop} width="24" height={plotBottom - plotTop} rx="8" className="chartCurrentBand" />
       <rect x={plotLeft} y={plotTop} width={plotRight - plotLeft} height={plotBottom - plotTop} className="chartPlotDismiss" onPointerDown={() => setSelectedIndex(null)} />
       {gridValues.map((value, index) => <g key={`${value}-${index}`}><line x1={plotLeft} y1={y(value)} x2={plotRight} y2={y(value)} className={`chartGrid chartGrid${index}`} /><text x={plotLeft - 7} y={y(value) + 3.5} textAnchor="end" className="chartAxisLabel">{axisLabel(value, step)}</text></g>)}
+      {annualPlanForChart !== undefined && <g className="chartAnnualPlanGroup"><line x1={plotLeft} x2={plotRight} y1={y(annualPlanForChart)} y2={y(annualPlanForChart)} className="chartAnnualPlan"/><text x={plotRight - 4} y={Math.max(plotTop + 10, y(annualPlanForChart) - 5)} textAnchor="end" className="chartAnnualPlanLabel">KH năm {axisLabel(annualPlanForChart, step)}</text></g>}
       <path d={planPath} className="chartPlan"/><path d={actualPath} className="chartActual"/>{mode === 'forecast' && forecast && <path d={forecastPath} className="chartForecast"/>}
       {slots.map((point,index)=>{const av=numericValue(mode==='ytd'?point?.ytd:point?.actual);const prev=index>0?slots[index-1]:undefined;if(index>=month||av===undefined||!isAnomalyPoint(history,point,prev))return null;return <g key={`anomaly-${index}`} className="chartAnomaly"><circle cx={x(index)} cy={y(av)} r="7"/><text x={x(index)} y={y(av)+3} textAnchor="middle">!</text></g>})}
       {slots.map((point,index)=>{const value=numericValue(mode === 'ytd' ? point?.ytd : point?.actual) ?? numericValue(mode === 'ytd' ? point?.planYtd : point?.planMonth);if(value===undefined)return null;return <circle key={index} cx={x(index)} cy={y(value)} r="14" className="chartTouchPoint" onPointerDown={(event)=>{event.stopPropagation();pin(index)}} onMouseEnter={()=>{if(selectedIndex===null)setHoveredIndex(index)}}/>})}
       {hasDetail && detailValue !== undefined && <g className="chartSelectedAnchor"><line x1={detailX} y1={detailY} x2={detailX} y2={plotBottom} className="chartCurrentGuide"/><circle cx={detailX} cy={detailY} r="5" className="chartAnchor"/></g>}
       {Array.from({length:12},(_,index)=><text key={index} x={x(index)} y="151" textAnchor="middle" className={index===activeIndex?'chartLabel current':index===month-1?'chartLabel currentPeriod':'chartLabel'} onPointerDown={(event)=>{event.stopPropagation();if(slots[index])pin(index)}} onMouseEnter={()=>{if(slots[index]&&selectedIndex===null)setHoveredIndex(index)}}>{`T${index+1}`}</text>)}
     </svg>
-    {hasDetail && detailIndex !== null && <div className="chartFloatingPopup"><div><b>{`T${detailIndex+1}/${year}`}</b><span>{mode==='ytd'?'Lũy kế':'Dự báo'}</span></div><dl><div><dt>TH</dt><dd>{metricFormat(history,selectedActual)}</dd></div><div><dt>KH</dt><dd>{metricFormat(history,selectedPlan)}</dd></div><div><dt>TH/KH</dt><dd>{compactPercent(ratio)}</dd></div><div><dt>Cùng kỳ</dt><dd>{compactPercent(sameDelta,true)}</dd></div></dl></div>}
+    <PlanReferenceStrip history={history} point={slots[Math.max(0, month - 1)]} year={year} focus={mode === 'ytd' ? 'ytd' : 'month'} />
+    {hasDetail && detailIndex !== null && <div className="chartFloatingPopup"><div><b>{`T${detailIndex+1}/${year}`}</b><span>{mode==='ytd'?'Lũy kế':'Dự báo'}</span></div><dl><div><dt>TH</dt><dd>{metricFormat(history,selectedActual)}</dd></div><div><dt>{mode === 'ytd' ? 'KH lũy kế' : 'KH tháng'}</dt><dd>{metricFormat(history,selectedPlan)}</dd></div><div><dt>TH/KH</dt><dd>{compactPercent(ratio)}</dd></div><div><dt>Cùng kỳ</dt><dd>{compactPercent(sameDelta,true)}</dd></div></dl></div>}
     {selectedIndex !== null && hasDetail && <MonthDetailPanel history={history} index={selectedIndex} year={year} actual={selectedActual} plan={selectedPlan} sameDelta={sameDelta} label={mode==='ytd'?'Lũy kế':'Dự báo'} close={()=>setSelectedIndex(null)}/>}
-    <div className="chartLegend"><span className="actual">TH</span><span className="plan">KH</span>{mode==='forecast'&&<span className="forecast">Dự báo</span>}<small>ⓘ Chạm hoặc kéo theo tháng</small></div>
+    <div className="chartLegend"><span className="actual">TH</span><span className="plan">{mode === 'ytd' ? 'KH lũy kế' : 'KH tháng'}</span>{mode === 'ytd' && annualPlanForChart !== undefined && <span className="annualPlan">KH năm</span>}{mode==='forecast'&&<span className="forecast">Dự báo</span>}<small>ⓘ Chạm hoặc kéo theo tháng</small></div>
   </div>;
 }
 
@@ -526,10 +574,11 @@ function MonthlyActualTargetChart({ data, kpiId }: { data: DashboardBootstrap; k
       />
       {active!==null&&<line x1={x(active)} x2={x(active)} y1={plotTop} y2={plotBottom} className="chartCurrentGuide"/>}
     </svg>
-    {hasDetail&&active!==null&&<div className="chartFloatingPopup"><div><b>{`T${active+1}/${year}`}</b><span>TH tháng & mốc KH</span></div><dl><div><dt>TH</dt><dd>{metricFormat(history,actual)}</dd></div><div><dt>KH</dt><dd>{metricFormat(history,plan)}</dd></div><div><dt>TH/KH</dt><dd>{compactPercent(ratio)}</dd></div><div><dt>Cùng kỳ</dt><dd>{compactPercent(sameDelta,true)}</dd></div></dl></div>}
+    <PlanReferenceStrip history={history} point={current} year={year} focus="month" />
+    {hasDetail&&active!==null&&<div className="chartFloatingPopup"><div><b>{`T${active+1}/${year}`}</b><span>TH tháng & mốc KH tháng</span></div><dl><div><dt>TH</dt><dd>{metricFormat(history,actual)}</dd></div><div><dt>KH tháng</dt><dd>{metricFormat(history,plan)}</dd></div><div><dt>TH/KH</dt><dd>{compactPercent(ratio)}</dd></div><div><dt>Cùng kỳ</dt><dd>{compactPercent(sameDelta,true)}</dd></div></dl></div>}
     {selected!==null&&hasDetail&&<MonthDetailPanel history={history} index={selected} year={year} actual={actual} plan={plan} sameDelta={sameDelta} close={()=>setSelected(null)}/>}
     <ChartMiniInsight history={history} current={current} priorMonth={previous} priorYear={previousYear}/>
-    <div className="chartLegend"><span className="actual bar">TH</span><span className="plan target">KH</span><small>ⓘ Chạm/kéo T1–T12 để xem</small></div>
+    <div className="chartLegend"><span className="actual bar">TH</span><span className="plan target">KH tháng</span><small>ⓘ Vạch ngang chỉ xuất hiện khi PDF có KH tháng</small></div>
   </div>;
 }
 
@@ -569,19 +618,37 @@ function chartKindFor(kpiId:string, history:MetricHistory) {
   return 'monthly';
 }
 
-function GaugeChart({ history, point }: { history:MetricHistory; point:MetricHistoryPoint }) {
-  const actual = numericValue(point.actual), plan = numericValue(point.planMonth);
+function GaugeChart({ history, point, year }: { history:MetricHistory; point:MetricHistoryPoint; year:string }) {
+  const actual = numericValue(point.actual);
+  const target = currentPlanTarget(history, point, year);
+  const plan = target.value;
   const [open,setOpen]=useState(false);
   if (actual === undefined) return <div className="lockedPanel"><span>◌</span><b>Chưa có dữ liệu thực hiện</b></div>;
-  const rawRatio = plan && plan !== 0 ? actual / plan * 100 : 100;
-  const score = history.direction === 'lower' && plan !== undefined ? Math.min(100, plan / Math.max(actual,.00001) * 100) : Math.min(100, rawRatio);
+  const rawRatio = plan !== undefined && plan !== 0 ? actual / plan * 100 : undefined;
+  const score = rawRatio === undefined ? 0 : history.direction === 'lower' && plan !== undefined ? Math.min(100, plan / Math.max(actual,.00001) * 100) : Math.min(100, rawRatio);
   const radius = 42, circumference = 2*Math.PI*radius;
-  return <div className="adaptiveGauge interactiveSnapshot" onClick={()=>setOpen((v)=>!v)} role="button" tabIndex={0}><svg viewBox="0 0 120 120" role="img" aria-label="Biểu đồ tỷ lệ hoàn thành"><circle cx="60" cy="60" r={radius} className="gaugeTrack"/><circle cx="60" cy="60" r={radius} className="gaugeValue" strokeDasharray={`${circumference*score/100} ${circumference}`}/><text x="60" y="56" textAnchor="middle" className="gaugeMain">{rawRatio.toLocaleString('vi-VN',{maximumFractionDigits:1})}%</text><text x="60" y="72" textAnchor="middle" className="gaugeSub">TH / KH tháng</text></svg><div className="gaugeFacts"><span><small>Thực hiện</small><b>{metricFormat(history,actual)}</b></span><span><small>Kế hoạch</small><b>{metricFormat(history,plan)}</b></span></div>{open&&<div className="snapshotPopup"><b>Chi tiết chỉ tiêu</b><span>TH: {metricFormat(history,actual)}</span><span>KH: {metricFormat(history,plan)}</span><span>Tỷ lệ: {rawRatio.toLocaleString('vi-VN',{maximumFractionDigits:1})}%</span></div>}</div>;
+  return <div className="adaptiveGauge interactiveSnapshot" onClick={()=>setOpen((v)=>!v)} role="button" tabIndex={0}>
+    <svg viewBox="0 0 120 120" role="img" aria-label="Biểu đồ tỷ lệ hoàn thành theo mốc kế hoạch chính thức"><circle cx="60" cy="60" r={radius} className="gaugeTrack"/><circle cx="60" cy="60" r={radius} className="gaugeValue" strokeDasharray={`${circumference*score/100} ${circumference}`}/><text x="60" y="56" textAnchor="middle" className="gaugeMain">{rawRatio === undefined ? '—' : `${rawRatio.toLocaleString('vi-VN',{maximumFractionDigits:1})}%`}</text><text x="60" y="72" textAnchor="middle" className="gaugeSub">{rawRatio === undefined ? 'Chưa có mốc KH' : `TH / ${target.label}`}</text></svg>
+    <div className="gaugeFacts"><span><small>Thực hiện</small><b>{metricFormat(history,actual)}</b></span><span><small>{target.label}</small><b>{metricFormat(history,plan)}</b></span></div>
+    <PlanReferenceStrip history={history} point={point} year={year} focus="month" />
+    {open&&<div className="snapshotPopup"><b>Chi tiết chỉ tiêu</b><span>TH: {metricFormat(history,actual)}</span><span>{target.label}: {metricFormat(history,plan)}</span><span>Tỷ lệ: {rawRatio === undefined ? '—' : `${rawRatio.toLocaleString('vi-VN',{maximumFractionDigits:1})}%`}</span></div>}
+  </div>;
 }
 
-function ThresholdChart({ history, point }: { history:MetricHistory; point:MetricHistoryPoint }) {
-  const actual=numericValue(point.actual),plan=numericValue(point.planMonth);const[open,setOpen]=useState(false);if(actual===undefined)return <div className="lockedPanel"><span>—</span><b>Chưa có dữ liệu thực hiện</b></div>;const max=Math.max(actual,plan??0,1)*1.25,actualWidth=Math.min(100,actual/max*100),planLeft=plan===undefined?undefined:Math.min(100,plan/max*100),good=plan===undefined?true:history.direction==='lower'?actual<=plan:actual>=plan;
-  return <div className="thresholdChart interactiveSnapshot" onClick={()=>setOpen((v)=>!v)} role="button" tabIndex={0}><div className="thresholdLabels"><span><small>TH</small><b>{metricFormat(history,actual)}</b></span><span><small>Ngưỡng/KH</small><b>{metricFormat(history,plan)}</b></span></div><div className="thresholdTrack"><span className={good?'good':'risk'} style={{width:`${actualWidth}%`}}/>{planLeft!==undefined&&<i style={{left:`${planLeft}%`}}/>}</div><small>{history.direction==='lower'?'Vạch đứng là mức tối đa/khuyến nghị':'Vạch đứng là kế hoạch cần đạt'} · Chạm để xem chi tiết</small>{open&&<div className="snapshotPopup"><b>{good?'Đang trong ngưỡng':'Cần chú ý'}</b><span>TH: {metricFormat(history,actual)}</span><span>KH/ngưỡng: {metricFormat(history,plan)}</span></div>}</div>;
+function ThresholdChart({ history, point, year }: { history:MetricHistory; point:MetricHistoryPoint; year:string }) {
+  const actual = numericValue(point.actual);
+  const target = currentPlanTarget(history, point, year);
+  const plan = target.value;
+  const [open,setOpen]=useState(false);
+  if(actual===undefined) return <div className="lockedPanel"><span>—</span><b>Chưa có dữ liệu thực hiện</b></div>;
+  const max=Math.max(actual,plan??0,1)*1.25,actualWidth=Math.min(100,actual/max*100),planLeft=plan===undefined?undefined:Math.min(100,plan/max*100),good=plan===undefined?undefined:history.direction==='lower'?actual<=plan:actual>=plan;
+  return <div className="thresholdChart interactiveSnapshot" onClick={()=>setOpen((v)=>!v)} role="button" tabIndex={0}>
+    <div className="thresholdLabels"><span><small>TH</small><b>{metricFormat(history,actual)}</b></span><span><small>{target.label}</small><b>{metricFormat(history,plan)}</b></span></div>
+    <div className="thresholdTrack"><span className={good===undefined?'neutral':good?'good':'risk'} style={{width:`${actualWidth}%`}}/>{planLeft!==undefined&&<i style={{left:`${planLeft}%`}}/>}</div>
+    <small>{plan===undefined?'Chưa có ngưỡng/KH tương thích trong nguồn; app không tự suy diễn.':history.direction==='lower'?'Vạch đứng là mức tối đa/kế hoạch':'Vạch đứng là kế hoạch cần đạt'} · Chạm để xem chi tiết</small>
+    <PlanReferenceStrip history={history} point={point} year={year} focus="month" />
+    {open&&<div className="snapshotPopup"><b>{good===undefined?'Chưa đủ mốc KH':good?'Đang trong ngưỡng':'Cần chú ý'}</b><span>TH: {metricFormat(history,actual)}</span><span>{target.label}: {metricFormat(history,plan)}</span></div>}
+  </div>;
 }
 
 function ParetoIncidentChart({ data }: { data:DashboardBootstrap }) {
@@ -589,7 +656,12 @@ function ParetoIncidentChart({ data }: { data:DashboardBootstrap }) {
 }
 
 function AdaptiveCurrentChart({ data, kpiId }: { data:DashboardBootstrap; kpiId:string }) {
-  const history=historyForKpi(data,kpiId),point=historyPoint(data,kpiId);if(!history||!point)return null;const kind=chartKindFor(kpiId,history);if(kind==='pareto')return <ParetoIncidentChart data={data}/>;if(kind==='gauge')return <GaugeChart history={history} point={point}/>;if(kind==='threshold')return <ThresholdChart history={history} point={point}/>;return <MonthlyActualTargetChart data={data} kpiId={kpiId}/>;
+  const history=historyForKpi(data,kpiId),point=historyPoint(data,kpiId);if(!history||!point)return null;
+  const kind=chartKindFor(kpiId,history),year=data.period.slice(0,4);
+  if(kind==='pareto')return <ParetoIncidentChart data={data}/>;
+  if(kind==='gauge')return <GaugeChart history={history} point={point} year={year}/>;
+  if(kind==='threshold')return <ThresholdChart history={history} point={point} year={year}/>;
+  return <MonthlyActualTargetChart data={data} kpiId={kpiId}/>;
 }
 
 function rangeMonths(selection:RangeSelection) {
