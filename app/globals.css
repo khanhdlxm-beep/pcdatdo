@@ -537,3 +537,27 @@ button,input,select,textarea{font-family:inherit;font-variant-numeric:tabular-nu
   .bottomNavV15 button>small{font-size:7.5px}.bottomNavV15 button>span{font-size:16px}.bottomNavV15 button>i{right:18%}
   .healthScoreCard>strong{font-size:24px}.favoriteKpiCard{flex-basis:132px}.actionSummary b{font-size:15px}.aiBriefGrid{grid-template-columns:1fr}.aiAskBox{grid-template-columns:1fr}.aiAskBox button{justify-self:end;padding:8px 12px}.earlyWarningCard{flex-basis:190px}
 }
+
+
+/* V1.8.4 — CHART VISUAL POLISH */
+.historyChartWrap.interactiveChartWrap{margin-top:8px;padding:32px 8px 10px;border:1px solid #E8EEF4;border-radius:16px;background:linear-gradient(180deg,#FFFFFF 0%,#FBFDFE 100%);box-shadow:inset 0 1px 0 rgba(255,255,255,.85),0 5px 16px rgba(15,23,42,.035)}
+.historyChart{filter:drop-shadow(0 1px 0 rgba(255,255,255,.85))}
+.chartPlotSurface{fill:#FCFDFE;stroke:#EDF2F7;stroke-width:1;vector-effect:non-scaling-stroke;pointer-events:none}
+.chartCurrentBand{fill:#ECFDF5;opacity:.72;pointer-events:none}
+.chartGrid{stroke:#E9EEF4;stroke-width:.85;stroke-dasharray:2 4;opacity:.95}
+.chartAxisLabel{fill:#526174;font-size:8.5px;font-weight:650;letter-spacing:-.08px;font-variant-numeric:tabular-nums;paint-order:stroke;stroke:#fff;stroke-width:2.6px;stroke-linejoin:round}
+.chartLabel{fill:#8A99AA;font-size:7px;font-weight:600}
+.chartLabel.currentPeriod,.chartLabel.current{fill:#047857;font-weight:850}
+.chartUnitLabel{left:10px;top:8px;padding:4px 7px;border:1px solid #E5EBF1;border-radius:999px;background:#F8FAFC;color:#64748B;line-height:1;letter-spacing:.02em}
+.chartUnitLabel b{color:#334155;font-weight:800}
+.chartActual{stroke:#0B8A61;stroke-width:3.1}
+.chartPlan{stroke:#A5B1BF;stroke-width:1.8;stroke-dasharray:5 5}
+.chartForecast{stroke:#D97706;stroke-width:2.2;stroke-dasharray:6 5}
+.monthlyActualBar{filter:drop-shadow(0 2px 3px rgba(5,150,105,.16))}
+.monthlyBarGroup.active .monthlyActualBar{filter:drop-shadow(0 3px 5px rgba(5,150,105,.28))}
+.monthlyPlanTarget{stroke-width:2.1;stroke-linecap:round}
+.chartSelectedAnchor .chartAnchor,.currentBarAnchor{filter:drop-shadow(0 2px 3px rgba(5,150,105,.3))}
+.chartLegend{margin-top:2px;padding:5px 4px 0;border-top:1px solid #F0F3F6}
+.chartLegend span{font-size:8.5px}.chartLegend small{color:#94A3B8}
+.chartFloatingPopup{border:1px solid rgba(255,255,255,.09);backdrop-filter:blur(8px)}
+@media(max-width:520px){.historyChartWrap.interactiveChartWrap{padding:30px 5px 8px;border-radius:14px}.chartAxisLabel{font-size:8px;stroke-width:2.2px}.chartUnitLabel{left:7px;top:7px;font-size:8.5px}.chartLabel{font-size:6.6px}}
