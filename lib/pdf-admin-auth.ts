@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 const TTL_SECONDS = 60 * 60 * 4;
 
 function secret() {
-  return process.env.PDF_ADMIN_SECRET || process.env.APPS_SCRIPT_API_KEY || '';
+  return process.env.PDF_ADMIN_SECRET || '';
 }
 
 function sign(payload:string) {
