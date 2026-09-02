@@ -51,6 +51,14 @@ if (!appShell.includes('buildUnifiedForecast')) fail('AppShell chưa nối Forec
 if (appShell.includes('Dự báo DEMO')) fail('AppShell còn nhãn Dự báo DEMO');
 ok('AppShell đã bỏ Forecast engine/nhãn DEMO cũ');
 
+const forbiddenProductionTokens = [
+  'USE_DEMO_DATA',
+  "dataMode === 'demo'",
+  "'pdf-seed'",
+  'DEMO giả lập',
+  'Giải pháp DEMO',
+  'Dự báo DEMO',
+];
 const productionSources = ['app', 'components', 'lib', 'types'];
 for (const base of productionSources) {
   const stack = [path.join(root, base)];
@@ -61,12 +69,14 @@ for (const base of productionSources) {
       if (entry.isDirectory()) stack.push(file);
       else if (/\.(ts|tsx|js|mjs)$/.test(entry.name)) {
         const text = fs.readFileSync(file, 'utf8');
-        if (text.includes('USE_DEMO_DATA')) fail(`${path.relative(root, file)} còn USE_DEMO_DATA`);
+        for (const token of forbiddenProductionTokens) {
+          if (text.includes(token)) fail(`${path.relative(root, file)} còn dấu vết Production cũ: ${token}`);
+        }
       }
     }
   }
 }
-ok('Production source không còn USE_DEMO_DATA');
+ok('Production source không còn nhánh demo/pdf-seed cũ');
 
 const lock = JSON.parse(read('package-lock.json'));
 if (lock.name !== packageJson.name || lock.version !== packageJson.version || lock.packages?.['']?.name !== packageJson.name || lock.packages?.['']?.version !== packageJson.version) {
