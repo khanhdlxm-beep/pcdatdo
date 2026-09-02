@@ -50,6 +50,10 @@ if (appShell.includes('function forecastFor(')) fail('AppShell còn Forecast eng
 if (!appShell.includes('buildUnifiedForecast')) fail('AppShell chưa nối Forecast engine thống nhất');
 if (appShell.includes('Dự báo DEMO')) fail('AppShell còn nhãn Dự báo DEMO');
 ok('AppShell đã bỏ Forecast engine/nhãn DEMO cũ');
+if (!appShell.includes('PlanReferenceStrip')) fail('Biểu đồ chưa hiển thị bảng mốc KH tháng/lũy kế/năm');
+if (!appShell.includes('app không tự chia KH năm theo tháng')) fail('Thiếu cảnh báo không tự suy diễn KH tháng');
+if (!appShell.includes('chartAnnualPlan')) fail('Biểu đồ lũy kế chưa có mốc KH năm');
+ok('Biểu đồ đối chiếu KH tháng/lũy kế/năm theo dữ liệu nguồn');
 
 const forbiddenProductionTokens = [
   'USE_DEMO_DATA',
