@@ -2,7 +2,7 @@ import { KPI_BY_ID, normalizeLookup } from '@/lib/kpi-catalog';
 import { parseViNumber } from '@/lib/pdf-parser';
 import type { PdfExtractedDocument, PdfImportRecord, PdfNumericValues, PdfParseResult, PdfPeriodSummary } from '@/types/pdf-import';
 
-export const PDF_PARSER_VERSION = '1.8.2-history';
+export const PDF_PARSER_VERSION = '1.8.3-production';
 
 type ExtractedRow = { page:number; rowNo:string; text:string; normalized:string };
 type LineRef = { page:number; text:string; normalized:string };
@@ -77,15 +77,44 @@ function extractBusiness(period:string,doc:PdfExtractedDocument,rows:ExtractedRo
   r=findRow(rows,['san luong','dien thuong'],['4']);if(r)add(rec(period,doc,r,'KD_DTP',standardPlanMonthYtd(after(r.text,/Tr\.?\s*kW\s*h|Tr\.?\s*kWh/i),{allowPlanYtd:true,transform:millionKwh}),.99));
   r=findRow(rows,['tong doanh thu'],['5']);if(r)add(rec(period,doc,r,'KD_DT',standardPlanMonthYtd(after(r.text,/Tỷ\s*đồng|Ty\s*dong/i),{transform:billion}),.99));
   r=findRow(rows,['gia ban dien','binh quan'],['6']);if(r)add(rec(period,doc,r,'KD_GIA',standardPlanMonthYtd(after(r.text,/đ\s*\/\s*kWh|d\s*\/\s*kWh/i),{transform:price}),.99));
-  r=findRow(rows,['gia mua dien','binh quan'],['7']);if(r)add(rec(period,doc,r,'KD_GIAMUA',standardPlanMonthYtd(after(r.text,/đ\s*\/\s*kWh|d\s*\/\s*kWh/i),{transform:price}),.96));
+  r=findRow(rows,['gia mua dien','binh quan'],['7']);if(r)add(rec(period,doc,r,'KD_GIAMUA',standardPlanMonthYtd(after(r.text,/đ\s*\/\s*kWh|d\s*\/\s*kWh/i),{transform:price}),.98));
   r=findRow(rows,['ton that','dien nang'],['8.1']);if(r)add(rec(period,doc,r,'KD_TT',standardPlanMonthYtd(after(r.text,/%/i)),.99));
-  r=findRow(rows,['bao tri'],['9']);if(r){const n=nums(r.text.replace(/^9\s+/,'')).filter((x)=>x<1000000);const v=n.length>=3?{planYear:n[0],actualMonth:n[1],actualYtd:n[2]}:n.length>=2?{actualMonth:n[0],actualYtd:n[1]}:{};add(rec(period,doc,r,'KD_CONGTO',v,.9,['Chỉ lấy số trên đúng dòng Bảo trì TBĐĐ; không suy số từ câu mô tả công tơ 1 giá/năm.']));}
-  r=findRow(rows,['kiem tra xu ly','vi pham','su dung dien'],['10']);if(r)add(rec(period,doc,r,'KD_VIPHAM',standardPlanMonthYtd(after(r.text,/kWh/i)),.95));
-  r=findRow(rows,['tiet kiem dien'],['11','9']);if(r)add(rec(period,doc,r,'KD_TKIEM',standardPlanMonthYtd(after(r.text,/Tr\.?\s*kW\s*h|Tr\.?\s*kWh/i),{allowPlanYtd:true,transform:millionKwh}),.97));
-  const thuRows=rows.filter((x)=>x.normalized.includes('ty le thu tien dien')&&!x.normalized.includes('theo phien'));r=thuRows.find((x)=>after(x.text,/%/).length>=3)||thuRows[0];if(r){const n=after(r.text,/%/i);const v=n.length>=3?{planYear:n[0],actualMonth:n[1],actualYtd:n[2]}:n.length===2?{planYear:n[0],actualMonth:n[1],actualYtd:n[1]}:{};add(rec(period,doc,r,'KD_THUNGAN',v,n.length>=3?.98:.88,n.length>=3?[]:['Báo cáo chỉ thể hiện một giá trị thực hiện; cần kiểm tra trước khi duyệt.']));}
-  r=findRow(rows,['hdmbd','ngoai sinh','het hieu luc'],['13.2','14.2']);if(r)add(rec(period,doc,r,'HDMBD',standardPlanMonthYtd(after(r.text,/HĐ|HD/i),{allowPlanYtd:true}),.97));
-  r=findRow(rows,['hdmbd','chuyen chu'],['14']);if(r){const n=after(r.text,/HĐ|HD/i);add(rec(period,doc,r,'DV_CHUYENCHU',n.length>=2?{actualMonth:n[n.length-2],actualYtd:n[n.length-1]}:{},.88,['Chỉ tiêu chuyển chủ thay đổi cách trình bày theo kỳ; cần kiểm tra nếu có số tổng khách hàng rất lớn.']));}
-  r=findRow(rows,['phat trien','khach hang'],['1']);if(r){const n=after(r.text,/KH/i);if(n.length>=2)add(rec(period,doc,r,'GANMOI',{actualMonth:n[n.length-2],actualYtd:n[n.length-1]},.96));}
+
+  const legal=findRow(rows,['bao tri','luat'],['9.1','9.2']);
+  if(legal){
+    const n=after(legal.text,/Cái|Cai/i);
+    const dispatch=findRow(rows,['bao tri','dieu phoi'],['9.1','9.2']);
+    const dn=dispatch?after(dispatch.text,/Cái|Cai/i):[];
+    const issues=['KPI chính lấy dòng Bảo trì theo Luật Đo lường.'];
+    if(dn.length>=3)issues.push(`Bảo trì điều phối: KH ${dn[0]}, tháng ${dn[1]}, lũy kế ${dn[2]}.`);
+    add(rec(period,doc,legal,'KD_CONGTO',n.length>=3?{planYear:n[0],actualMonth:n[1],actualYtd:n[2]}:{},.99,issues));
+  }
+
+  r=findRow(rows,['kiem tra xu ly','vi pham','su dung dien'],['10']);
+  if(r){
+    const n=after(r.text,/kWh/i);let v:PdfNumericValues={};
+    if(n.length>=4)v={planYear:n[0],actualMonth:n[1],actualYtd:n[2]};
+    else if(n.length===3&&n[0]>1000&&n[2]>=0&&n[2]<=100)v={planYear:n[0],actualMonth:0,actualYtd:n[1]};
+    else v=standardPlanMonthYtd(n);
+    add(rec(period,doc,r,'KD_VIPHAM',v,.99,n.length===3?['Dấu “-” ở cột tháng được chuẩn hóa thành 0; số cuối là tỷ lệ hoàn thành, không phải lũy kế.']:[]));
+  }
+
+  r=findRow(rows,['tiet kiem dien'],['11','9']);if(r)add(rec(period,doc,r,'KD_TKIEM',standardPlanMonthYtd(after(r.text,/Tr\.?\s*kW\s*h|Tr\.?\s*kWh/i),{allowPlanYtd:true,transform:millionKwh}),.98));
+  const thuRows=rows.filter((x)=>x.normalized.includes('ty le thu tien dien')&&!x.normalized.includes('theo phien'));r=thuRows.find((x)=>after(x.text,/%/).length>=3)||thuRows[0];if(r){const n=after(r.text,/%/i);const v=n.length>=3?{planYear:n[0],actualMonth:n[1],actualYtd:n[2]}:n.length===2?{planYear:n[0],actualMonth:n[1],actualYtd:n[1]}:{};add(rec(period,doc,r,'KD_THUNGAN',v,n.length>=3?.99:.88,n.length>=3?[]:['Báo cáo chỉ thể hiện một giá trị thực hiện; cần kiểm tra trước khi duyệt.']));}
+  r=findRow(rows,['hdmbd','ngoai sinh','het hieu luc'],['13.2','14.2']);if(r)add(rec(period,doc,r,'HDMBD',standardPlanMonthYtd(after(r.text,/HĐ|HD/i),{allowPlanYtd:true}),.98));
+
+  const ccSh=findRow(rows,['hdmbd','sinh hoat'],['14.1']);
+  const ccNsh=findRow(rows,['hdmbd','ngoai sinh'],['14.2']);
+  if(ccSh&&ccNsh){
+    const a=after(ccSh.text,/HĐ|HD/i),b=after(ccNsh.text,/HĐ|HD/i);
+    if(a.length>=2&&b.length>=2)add(rec(period,doc,{page:ccSh.page,text:`${ccSh.text} | ${ccNsh.text}`} ,'DV_CHUYENCHU',{actualMonth:a[a.length-2]+b[b.length-2],actualYtd:a[a.length-1]+b[b.length-1]},.98,['Tổng chuyển chủ = sinh hoạt + ngoài sinh hoạt.']));
+  }
+
+  r=findRow(rows,['phat trien','khach hang'],['1']);if(r){const n=after(r.text,/KH/i);if(n.length>=2)add(rec(period,doc,r,'GANMOI',{actualMonth:n[n.length-2],actualYtd:n[n.length-1]},.97));}
+
+  const forecastLines=pageLines(doc,['du bao dien thuong pham']);
+  const forecast=forecastLines.find((line)=>{const n=nums(line.text);return n.length>=4&&n.slice(-4).every((x)=>x>=0&&x<=100);});
+  if(forecast){const n=nums(forecast.text).slice(-4);add(rec(period,doc,forecast,'KD_DBPT',{actualMonth:n[2],actualYtd:n[3]},.99,[`Nhóm trên 1 triệu: tháng ${n[0]}%, lũy kế ${n[1]}%. KPI app dùng cột Tổng thương phẩm.`]));}
   return out;
 }
 
@@ -94,13 +123,23 @@ function totalLine(doc:PdfExtractedDocument,sectionNeedles:string[],predicate:(n
 function extractCustomerAndRemote(period:string,doc:PdfExtractedDocument){
   const out:PdfImportRecord[]=[];const add=(x:PdfImportRecord|undefined)=>{if(x)out.push(x);};
   const crm=totalLine(doc,['he thong crm'],(n)=>n.length>=6);if(crm){const n=nums(crm.text),m=n[0]>0?n[1]/n[0]*100:undefined,y=n[3]>0?n[4]/n[3]*100:undefined;if(m!==undefined&&y!==undefined)add(rec(period,doc,crm,'CRM',{actualMonth:Number(m.toFixed(2)),actualYtd:Number(y.toFixed(2))},.97,['Tỷ lệ CRM tính từ dòng Tổng cộng của đúng bảng CRM.']));}
-  const accessLines=pageLines(doc,['tiep can dien nang']);const access=accessLines.find((l)=>{const n=nums(l.text);return (l.normalized.startsWith('tong cong')||l.normalized.includes('qua luoi dien trung ap'))&&n.length>=6&&n[2]>=0&&n[2]<=30&&n[5]>=0&&n[5]<=30;});if(access){const n=nums(access.text);add(rec(period,doc,access,'TC_DN',{actualMonth:n[2],actualYtd:n[5]},.94,['Lấy cột thời gian trung bình, không lấy số lượng công trình.']));}
+  const accessLines=pageLines(doc,['tiep can dien nang']);const access=accessLines.find((l)=>{const n=nums(l.text);return (l.normalized.startsWith('tong cong')||l.normalized.includes('qua luoi dien trung ap'))&&n.length>=6&&n[2]>=0&&n[2]<=30&&n[5]>=0&&n[5]<=30;});if(access){const n=nums(access.text);add(rec(period,doc,access,'TC_DN',{actualMonth:n[2],actualYtd:n[5]},.96,['Lấy cột thời gian trung bình, không lấy số lượng công trình.']));}
   const remote=totalLine(doc,['khai thac hoa don do xa'],(n)=>n.length>=7&&n[2]>=50&&n[2]<=100.5&&n[4]>=50&&n[4]<=100.5&&n[6]>=0&&n[6]<=100.5)||totalLine(doc,['thu thap du lieu tu xa'],(n)=>n.length>=7&&n[2]>=50&&n[2]<=100.5&&n[4]>=50&&n[4]<=100.5&&n[6]>=0&&n[6]<=100.5);if(remote){const n=nums(remote.text);add(rec(period,doc,remote,'DX_KB',{actualMonth:n[2],actualYtd:n[2]},.99));add(rec(period,doc,remote,'DX_KN',{actualMonth:n[4],actualYtd:n[4]},.99));add(rec(period,doc,remote,'DX_HD',{actualMonth:n[6],actualYtd:n[6]},.99));}
-  const lost=totalLine(doc,['mat ket noi'],(n)=>n.length>=1&&n.length<=3&&n[0]>=1);if(lost){const n=nums(lost.text);add(rec(period,doc,lost,'DX_MK',{actualMonth:n[0],actualYtd:n[0]},.9,['Lấy dòng Tổng cộng trong đúng khu vực mất kết nối.']));}
+  const lost=totalLine(doc,['mat ket noi'],(n)=>n.length>=1&&n.length<=3&&n[0]>=1);if(lost){const n=nums(lost.text);add(rec(period,doc,lost,'DX_MK',{actualMonth:n[0],actualYtd:n[0]},.96,['Lấy dòng Tổng cộng trong đúng khu vực mất kết nối.']));}
   return out;
 }
 
-function extractTechnical(period:string,doc:PdfExtractedDocument,rows:ExtractedRow[]){const out:PdfImportRecord[]=[];const add=(x:PdfImportRecord|undefined)=>{if(x)out.push(x);};let r=rows.find((x)=>x.normalized.includes('su co luoi trung the')||x.normalized.includes('su co trung the'));if(r){const n=after(r.text,/Vụ|Vu/i);const v=n.length>=4?{planYear:n[0],planYtd:n[1],actualMonth:n[2],actualYtd:n[3]}:n.length>=3?{planYear:n[0],actualMonth:n[1],actualYtd:n[2]}:{};add(rec(period,doc,r,'KT_SC',v,.96));}for(const id of ['SAIFI','SAIDI','MAIFI'] as const){r=rows.find((x)=>new RegExp(`\\b${id.toLowerCase()}\\b`).test(x.normalized));if(!r)continue;const n=after(r.text,id==='SAIDI'?/phút|phut/i:/lần|lan/i);const v=n.length>=4?{planYear:n[0],planYtd:n[1],actualMonth:n[2],actualYtd:n[3]}:n.length>=3?{planYear:n[0],actualMonth:n[1],actualYtd:n[2]}:{};add(rec(period,doc,r,id,v,.96));}return out;}
+function extractTechnical(period:string,doc:PdfExtractedDocument,rows:ExtractedRow[]){const out:PdfImportRecord[]=[];const add=(x:PdfImportRecord|undefined)=>{if(x)out.push(x);};let r=rows.find((x)=>x.normalized.includes('su co luoi trung the')||x.normalized.includes('su co trung the'));if(r){const n=after(r.text,/Vụ|Vu/i);const v=n.length>=4?{planYear:n[0],planYtd:n[1],actualMonth:n[2],actualYtd:n[3]}:n.length>=3?{planYear:n[0],actualMonth:n[1],actualYtd:n[2]}:{};add(rec(period,doc,r,'KT_SC',v,.97));}for(const id of ['SAIFI','SAIDI','MAIFI'] as const){r=rows.find((x)=>new RegExp(`\\b${id.toLowerCase()}\\b`).test(x.normalized));if(!r)continue;const n=after(r.text,id==='SAIDI'?/phút|phut/i:/lần|lan/i);const v=n.length>=4?{planYear:n[0],planYtd:n[1],actualMonth:n[2],actualYtd:n[3]}:n.length>=3?{planYear:n[0],actualMonth:n[1],actualYtd:n[2]}:{};add(rec(period,doc,r,id,v,.98));}return out;}
+
+function extractFinance(period:string,doc:PdfExtractedDocument){
+  const out:PdfImportRecord[]=[];const lines=pageLines(doc,['cong tac scl']);
+  const scl=lines.find((l)=>l.normalized.includes('gia tri thuc hien')&&nums(l.text).length>=3);
+  if(scl){
+    const n=after(scl.text,/Tỷ\s*đồng|Ty\s*dong/i);
+    if(n.length>=3){const month=n[1]>100&&n[0]<100?n[1]/1000:n[1];const x=rec(period,doc,scl,'SCL',{planYear:n[0],actualMonth:month,actualYtd:n[2]},.96,['Giá trị tháng SCL >100 được hiểu là triệu đồng và quy đổi /1000 sang Tỷ đồng.']);if(x)out.push(x);}
+  }
+  return out;
+}
 
 function detectSummary(docs:PdfExtractedDocument[]):PdfPeriodSummary|undefined{const text=normalizeLookup(docs.map((d)=>d.pages.map((p)=>p.text).join(' ')).join(' '));const totalM=text.match(/co (\d+) chi tieu san xuat kinh doanh chinh/),passM=text.match(/thuc hien dat (\d+)(?: (\d+))? chi tieu/),failM=text.match(/(\d+)(?: \d+)? chi tieu (?:chua|khong) dat/),partialM=text.match(/(\d+)(?: \d+)? chi tieu dat (?:1|mot) phan/);const total=totalM?Number(totalM[1]):passM&&passM[2]?Number(passM[2]):0;if(!total)return undefined;return {total,pass:passM?Number(passM[1]):0,fail:failM?Number(failM[1]):0,partial:partialM?Number(partialM[1]):0,detected:true};}
 
@@ -113,8 +152,8 @@ function suspicious(r:PdfImportRecord){const values=[r.values.actualMonth,r.valu
 
 export function applyHistoricalDhsxExtractors(result:PdfParseResult,docs:PdfExtractedDocument[]):PdfParseResult{
   const map=new Map<string,PdfImportRecord>();result.records.forEach((r)=>map.set(r.kpiId||r.rowId,r));
-  for(const doc of docs){const name=normalizeLookup(doc.name),text=normalizeLookup(doc.pages.slice(0,3).map((p)=>p.text).join(' '));if(!name.includes('dhsx')&&!text.includes('tinh hinh thuc hien ke hoach sxkd'))continue;const rows=collectRows(doc);const extras=[...extractBusiness(result.period,doc,rows),...extractCustomerAndRemote(result.period,doc),...extractTechnical(result.period,doc,rows)];for(const next of extras){const key=next.kpiId||next.rowId;map.set(key,mergeRecord(map.get(key),next));}}
+  for(const doc of docs){const name=normalizeLookup(doc.name),text=normalizeLookup(doc.pages.slice(0,3).map((p)=>p.text).join(' '));if(!name.includes('dhsx')&&!text.includes('tinh hinh thuc hien ke hoach sxkd'))continue;const rows=collectRows(doc);const extras=[...extractBusiness(result.period,doc,rows),...extractCustomerAndRemote(result.period,doc),...extractTechnical(result.period,doc,rows),...extractFinance(result.period,doc)];for(const next of extras){const key=next.kpiId||next.rowId;map.set(key,mergeRecord(map.get(key),next));}}
   const records:PdfImportRecord[]=[...map.values()].map((r):PdfImportRecord=>{if(['UNMAPPED','CONFLICT','VERIFIED','SKIP'].includes(r.reviewStatus))return r;const problem=suspicious(r);const reviewStatus:PdfImportRecord['reviewStatus']=!hasValue(r.values)||r.confidence<.86||Boolean(problem)?'NEED_REVIEW':'AUTO_OK';return {...r,reviewStatus,issues:problem?[...new Set([...(r.issues||[]),problem])]:r.issues};});
   const summary=detectSummary(docs)||result.summary;const stats={total:records.length,autoOk:records.filter((r)=>r.reviewStatus==='AUTO_OK').length,needReview:records.filter((r)=>r.reviewStatus==='NEED_REVIEW').length,conflict:records.filter((r)=>r.reviewStatus==='CONFLICT').length,unmapped:records.filter((r)=>r.reviewStatus==='UNMAPPED').length};
-  return {...result,records,summary,stats,notes:[...result.notes,`Parser ${PDF_PARSER_VERSION}: hỗ trợ bố cục ĐHSX 2025–2026, tự nhận kỳ dữ liệu và chặn số nghi ngờ trước khi duyệt.`]};
+  return {...result,records,summary,stats,notes:[...result.notes,`Parser ${PDF_PARSER_VERSION}: một luồng Production cho ĐHSX 2025–2026; tự nhận kỳ dữ liệu, chuẩn hóa KPI và chặn số nghi ngờ trước khi duyệt.`]};
 }

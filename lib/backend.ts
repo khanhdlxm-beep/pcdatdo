@@ -1,4 +1,3 @@
-import { buildDemoDashboard } from '@/data/demo-series';
 import type { DashboardBootstrap } from '@/types/dashboard';
 
 const MONTHS: Record<string, string> = {
@@ -13,9 +12,6 @@ function normalizePeriod(value: unknown): string | undefined {
   const direct = raw.match(/^(\d{4})-(0[1-9]|1[0-2])$/);
   if (direct) return `${direct[1]}-${direct[2]}`;
 
-  // Apps Script/Google Sheets can serialize a cell containing 2026-05 as
-  // "Fri May 01 2026 00:00:00 GMT+0700 (...)". Parse the month name directly
-  // instead of using new Date(), which could shift the month in UTC.
   const appsScriptDate = raw.match(/\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2}\s+(\d{4})\b/);
   if (appsScriptDate) return `${appsScriptDate[2]}-${MONTHS[appsScriptDate[1]]}`;
 
@@ -58,13 +54,13 @@ async function sleep(ms: number) {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function fetchBootstrap(baseUrl: string, key: string | undefined, period: string) {
+async function fetchBootstrap(baseUrl: string, key: string, period: string) {
   let lastError: unknown;
   for (let attempt = 0; attempt < 3; attempt++) {
     const endpoint = new URL(baseUrl);
     endpoint.searchParams.set('action', 'bootstrap');
     endpoint.searchParams.set('period', period);
-    if (key) endpoint.searchParams.set('apiKey', key);
+    endpoint.searchParams.set('apiKey', key);
 
     try {
       const response = await fetch(endpoint.toString(), {
@@ -85,9 +81,6 @@ async function fetchBootstrap(baseUrl: string, key: string | undefined, period: 
 }
 
 export async function loadDashboard(period?: string): Promise<DashboardBootstrap> {
-  const useDemo = process.env.USE_DEMO_DATA !== 'false';
-  if (useDemo) return buildDemoDashboard(period);
-
   const url = process.env.APPS_SCRIPT_API_URL;
   const key = process.env.APPS_SCRIPT_API_KEY;
   if (!url) throw new Error('Production chưa cấu hình APPS_SCRIPT_API_URL.');
@@ -95,13 +88,8 @@ export async function loadDashboard(period?: string): Promise<DashboardBootstrap
 
   const requested = period ? (normalizePeriod(period) ?? period) : 'latest';
   const first = await fetchBootstrap(url, key, requested);
-
   if (period) return first;
 
-  // The Apps Script backend may still read a PERIOD cell as a Date object.
-  // In that case its lexical "latest" selection can accidentally pick May
-  // after July ("Fri May..." sorts after "2026-07"). Resolve valid YYYY-MM
-  // periods here and refetch the true latest period explicitly.
   const candidates = Array.from(new Set(
     [...(first.availablePeriods ?? []), first.period]
       .map(normalizePeriod)
@@ -109,8 +97,7 @@ export async function loadDashboard(period?: string): Promise<DashboardBootstrap
   )).sort();
   const latest = candidates[candidates.length - 1];
 
-  if (latest && first.period !== latest) {
-    return fetchBootstrap(url, key, latest);
-  }
-  return first;
+  return latest && first.period !== latest
+    ? fetchBootstrap(url, key, latest)
+    : first;
 }
