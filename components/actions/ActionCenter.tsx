@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import type { ActionItem, ActionStatus } from '@/types/intelligence';
-import { actionPriorityLabel, actionStatusLabel } from '@/lib/action-engine';
+import { actionOriginLabel, actionPriorityLabel, actionStatusLabel } from '@/lib/action-engine';
 
 const filters: { id:'all'|ActionStatus; label:string }[] = [
   {id:'all',label:'Tất cả'}, {id:'new',label:'Mới'}, {id:'doing',label:'Đang làm'}, {id:'overdue',label:'Quá hạn'}, {id:'done',label:'Hoàn thành'},
@@ -22,7 +22,7 @@ export default function ActionCenter({ actions, updateAction, openAction }: {
   }),[actions]);
   const visible=useMemo(()=>actions.filter((a)=>filter==='all'||a.status===filter).sort((a,b)=>Number(b.priority==='high')-Number(a.priority==='high')||a.progress-b.progress),[actions,filter]);
   return <>
-    <div className="pageTitle"><div><small>Điều hành</small><h2>Kế hoạch hành động</h2></div><span>{actions.length} việc</span></div>
+    <div className="pageTitle"><div><small>Điều hành</small><h2>Hành động & gợi ý</h2></div><span>{actions.length} việc</span></div>
     <section className="actionSummary">
       <span><b>{summary.new}</b><small>Mới</small></span><span className="doing"><b>{summary.doing}</b><small>Đang làm</small></span><span className="danger"><b>{summary.overdue}</b><small>Quá hạn</small></span><span className="success"><b>{summary.done}</b><small>Hoàn thành</small></span>
     </section>
@@ -32,13 +32,17 @@ export default function ActionCenter({ actions, updateAction, openAction }: {
         <button className="actionMain" onClick={()=>openAction(action.id)}>
           <div className="actionTop"><span className={`actionPriority ${action.priority}`}>{actionPriorityLabel(action.priority)}</span><small>{action.owner}</small></div>
           <b>{action.title}</b>
-          {action.sourceKpiLabel&&<small className="actionSource">KPI: {action.sourceKpiLabel}</small>}
-          <div className="actionProgress"><i style={{width:`${Math.max(0,Math.min(100,action.progress))}%`}}/><span>{action.progress}%</span></div>
-          <div className="actionMeta"><span>{actionStatusLabel(action.status)}</span><span>{action.dueDate ? `Hạn ${action.dueDate}` : 'Chưa đặt hạn'}</span></div>
+          <small className="actionSource">{actionOriginLabel(action)}{action.sourceKpiLabel ? ` · KPI: ${action.sourceKpiLabel}` : ''}</small>
+          {action.progressConfirmed ? (
+            <div className="actionProgress"><i style={{width:`${Math.max(0,Math.min(100,action.progress))}%`}}/><span>{action.progress}%</span></div>
+          ) : (
+            <div className="actionProgress unconfirmed"><i style={{width:'0%'}}/><span>Chưa xác nhận tiến độ</span></div>
+          )}
+          <div className="actionMeta"><span>{actionStatusLabel(action.status)}</span><span>{action.dueDateConfirmed && action.dueDate ? `Hạn ${action.dueDate}` : 'Chưa có hạn chính thức'}</span></div>
         </button>
         <div className="actionQuick">
-          {action.status!=='done'&&<button onClick={()=>updateAction(action.id,{status:'doing',progress:Math.max(action.progress,55)})}>Đang làm</button>}
-          {action.status!=='done'&&<button className="done" onClick={()=>updateAction(action.id,{status:'done',progress:100})}>✓ Xong</button>}
+          {action.status!=='done'&&<button onClick={()=>updateAction(action.id,{status:'doing',progress:50,progressConfirmed:true})}>Đang làm</button>}
+          {action.status!=='done'&&<button className="done" onClick={()=>updateAction(action.id,{status:'done',progress:100,progressConfirmed:true})}>✓ Xong</button>}
         </div>
       </article>)}
       {!visible.length&&<div className="emptyState">Không có hành động ở trạng thái này.</div>}
