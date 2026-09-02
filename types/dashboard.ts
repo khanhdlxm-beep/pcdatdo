@@ -21,7 +21,7 @@ export type DashboardBootstrap = {
   ok:boolean;
   period:string;
   reportingDate:string;
-  dataMode:'pdf-seed'|'apps-script'|'demo';
+  dataMode:'apps-script';
   sourceLabel:string;
   availablePeriods?:string[];
   history?:Record<string,MetricHistory>;
