@@ -1,44 +1,26 @@
 import type { DashboardBootstrap, MetricHistory } from '@/types/dashboard';
-import type { EarlyWarning, RiskLevel } from '@/types/intelligence';
-
-function num(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
-}
-
-function currentYearPoints(history: MetricHistory, period: string) {
-  const year = period.slice(0, 4);
-  const month = Number(period.slice(5));
-  return history.points
-    .filter((point) => point.period.startsWith(`${year}-`) && Number(point.period.slice(5)) <= month)
-    .sort((a, b) => a.period.localeCompare(b.period));
-}
+import type { EarlyWarning, HealthConfidence, RiskLevel } from '@/types/intelligence';
+import { buildUnifiedForecast, forecastConfidenceLabel } from '@/lib/forecast-core';
 
 export function projectYear(history: MetricHistory, period: string) {
-  const year = period.slice(0, 4);
-  const month = Number(period.slice(5));
-  const annualPlan = num(history.annualPlans?.[year]);
-  const points = currentYearPoints(history, period);
-  if (!points.length || annualPlan === undefined || annualPlan === 0) return null;
-  const latest = points[points.length - 1];
-  const ytd = num(latest.ytd);
-  let projectedValue: number | undefined;
-  if (history.aggregate === 'sum') {
-    if (ytd !== undefined && month > 0) projectedValue = ytd / month * 12;
-    else {
-      const values = points.map((point) => num(point.actual)).filter((value): value is number => value !== undefined);
-      if (values.length) projectedValue = values.reduce((sum, value) => sum + value, 0) / values.length * 12;
-    }
-  } else {
-    const recent = points.slice(-3).map((point) => num(point.actual)).filter((value): value is number => value !== undefined);
-    if (recent.length) projectedValue = recent.reduce((sum, value) => sum + value, 0) / recent.length;
-  }
-  if (projectedValue === undefined) return null;
-  const projectedRatio = history.direction === 'lower' ? annualPlan / Math.max(projectedValue, 0.000001) * 100 : projectedValue / annualPlan * 100;
-  return { projectedValue, annualPlan, projectedRatio };
+  const forecast = buildUnifiedForecast(history, period);
+  if (!forecast || forecast.projectedRatio === undefined || forecast.annualPlan === undefined) return null;
+  return {
+    projectedValue: forecast.yearEnd,
+    annualPlan: forecast.annualPlan,
+    projectedRatio: forecast.projectedRatio,
+    confidence: forecast.confidence,
+    coverage: forecast.coverage,
+    pointsUsed: forecast.pointsUsed,
+    seriesBreak: forecast.seriesBreak,
+    basis: forecast.basis,
+  };
 }
 
-function riskFromRatio(ratio: number, currentTone: string): RiskLevel {
-  if (currentTone === 'bad' || ratio < 92) return 'high';
+function riskFromRatio(ratio: number, currentTone: string, confidence: HealthConfidence): RiskLevel {
+  if (currentTone === 'bad') return 'high';
+  if (confidence === 'low') return ratio < 99 || currentTone === 'warn' ? 'medium' : 'low';
+  if (ratio < 92) return 'high';
   if (currentTone === 'warn' || ratio < 99) return 'medium';
   return 'low';
 }
@@ -51,12 +33,12 @@ export function buildEarlyWarnings(data: DashboardBootstrap): EarlyWarning[] {
       if (!history || history.direction === 'info') continue;
       const projection = projectYear(history, data.period);
       if (!projection) continue;
-      const risk = riskFromRatio(projection.projectedRatio, item.tone);
+      const risk = riskFromRatio(projection.projectedRatio, item.tone, projection.confidence);
       const hiddenRisk = item.tone === 'good' && risk !== 'low';
       const visibleRisk = item.tone !== 'good' || risk !== 'low';
       if (!visibleRisk) continue;
       const relation = history.direction === 'lower' ? 'ngưỡng' : 'kế hoạch';
-      const gap = Math.abs(projection.projectedRatio - 100);
+      const confidenceText = forecastConfidenceLabel(projection.confidence);
       rows.push({
         id: `EW_${item.id}`,
         kpiId: item.id,
@@ -64,14 +46,18 @@ export function buildEarlyWarnings(data: DashboardBootstrap): EarlyWarning[] {
         label: item.label,
         risk,
         reason: hiddenRisk
-          ? `KPI hiện đang đạt nhưng dự báo cuối năm có nguy cơ thấp hơn ${relation}.`
+          ? `KPI hiện đang đạt nhưng xu hướng cuối năm cần theo dõi. Forecast có độ tin cậy ${confidenceText.toLowerCase()}, độ phủ ${projection.coverage.toLocaleString('vi-VN', { maximumFractionDigits: 0 })}%.`
           : risk === 'high'
-            ? `Xu hướng hiện tại cho thấy rủi ro cao so với ${relation} cuối năm.`
-            : `Cần theo dõi sát tốc độ thực hiện để bảo đảm ${relation} cuối năm.`,
-        forecastText: `Dự báo đạt khoảng ${projection.projectedRatio.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}% ${relation} năm.`,
+            ? `Xu hướng hiện tại cho thấy rủi ro cao so với ${relation} cuối năm. Độ tin cậy Forecast: ${confidenceText}.`
+            : `Cần theo dõi tốc độ thực hiện; độ tin cậy Forecast ${confidenceText.toLowerCase()}, độ phủ ${projection.coverage.toLocaleString('vi-VN', { maximumFractionDigits: 0 })}%.`,
+        forecastText: `Dự báo khoảng ${projection.projectedRatio.toLocaleString('vi-VN', { maximumFractionDigits: 1 })}% ${relation} năm · tin cậy ${confidenceText.toLowerCase()}.`,
         projectedRatio: projection.projectedRatio,
         projectedValue: projection.projectedValue,
         annualPlan: projection.annualPlan,
+        coverage: projection.coverage,
+        confidence: projection.confidence,
+        pointsUsed: projection.pointsUsed,
+        seriesBreak: projection.seriesBreak,
       });
     }
   }
