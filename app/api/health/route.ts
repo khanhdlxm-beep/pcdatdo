@@ -10,7 +10,7 @@ export async function GET() {
     parserVersion: PDF_PARSER_VERSION,
     dataSchemaVersion: DATA_SCHEMA_VERSION,
     appsScriptConfigured: Boolean(process.env.APPS_SCRIPT_API_URL && process.env.APPS_SCRIPT_API_KEY),
-    pdfAdminConfigured: Boolean(process.env.PDF_ADMIN_PIN && (process.env.PDF_ADMIN_SECRET || process.env.APPS_SCRIPT_API_KEY)),
+    pdfAdminConfigured: Boolean(process.env.PDF_ADMIN_PIN && process.env.PDF_ADMIN_SECRET),
     pdfAdminDedicatedSecret: Boolean(process.env.PDF_ADMIN_SECRET),
     weatherConfigured: Boolean(process.env.WEATHER_USER_AGENT),
     aiMode: process.env.AI_MODE || 'local',
