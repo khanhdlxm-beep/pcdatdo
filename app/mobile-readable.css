@@ -1,0 +1,297 @@
+/*
+ * Mobile readability layer.
+ * Visual-only: no KPI/data/API/business logic changes.
+ */
+
+@media (max-width: 640px) {
+  :root {
+    --bg: #F1F5F9;
+    --card: #FFFFFF;
+    --ink: #0B1220;
+    --muted: #475569;
+    --line: #CBD5E1;
+    --neutral: #64748B;
+    --neutral-bg: #E2E8F0;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+
+  body {
+    background: #F1F5F9;
+    color: #0B1220;
+  }
+
+  .appShell.v15 {
+    background: #F1F5F9;
+    padding-bottom: 86px;
+  }
+
+  /* Header */
+  .compactHeader {
+    min-height: 64px;
+    padding: 10px 12px;
+    background: linear-gradient(135deg, #003F2A, #066145);
+    box-shadow: 0 4px 18px rgba(0, 63, 42, .22);
+  }
+  .headerBrand { font-size: 12px; }
+  .compactHeader h1 { font-size: 19px; line-height: 1.15; }
+  .periodDropdown select {
+    max-width: 132px;
+    padding: 8px 8px;
+    font-size: 12px;
+  }
+  .iconBtn {
+    width: 36px;
+    height: 36px;
+    font-size: 17px;
+    border-radius: 11px;
+  }
+
+  /* Summary */
+  .summaryCompact {
+    margin: 10px 9px 0;
+    padding: 11px 10px 10px;
+    border-color: #CBD5E1;
+    background: #FFFFFF;
+  }
+  .summaryNumbers b { font-size: 18px; }
+  .summaryNumbers small {
+    font-size: 11px;
+    line-height: 1.25;
+    color: #475569;
+  }
+  .summaryScopeRow small,
+  .summaryScopeRow span { color: #475569; }
+
+  .contentV15 {
+    gap: 12px;
+    padding: 11px 9px;
+  }
+
+  /* Section headings */
+  .sectionHeading b { font-size: 17px; line-height: 1.25; }
+  .sectionHeading small {
+    font-size: 12px;
+    line-height: 1.4;
+    color: #475569;
+  }
+  .searchIcon {
+    width: 40px;
+    height: 40px;
+    font-size: 20px;
+  }
+
+  /* Home field cards */
+  .domainGridV15 { gap: 9px; }
+  .domainTile {
+    aspect-ratio: auto;
+    min-height: 158px;
+    padding: 12px;
+    border-color: #CBD5E1;
+    box-shadow: 0 5px 16px rgba(15, 23, 42, .07);
+  }
+  .domainTileIcon {
+    width: 40px;
+    height: 40px;
+    font-size: 21px;
+  }
+  .domainTileText { gap: 6px; padding-right: 10px; }
+  .domainTileText h2 {
+    font-size: 16px;
+    line-height: 1.23;
+    color: #0B1220;
+  }
+  .domainTileText p {
+    font-size: 12px;
+    line-height: 1.4;
+    color: #475569;
+    -webkit-line-clamp: 3;
+  }
+  .domainArrow { font-size: 22px; }
+  .favoriteBtn { width: 34px; height: 34px; }
+
+  /* Quick alert / early warning / health */
+  .compactAlertShortcut,
+  .earlyWarningShortcut {
+    padding: 11px 12px;
+    gap: 10px;
+    background: #FFFFFF;
+  }
+  .compactAlertShortcut b,
+  .earlyWarningShortcut b { font-size: 14px; line-height: 1.3; }
+  .compactAlertShortcut small,
+  .earlyWarningShortcut small {
+    font-size: 11px;
+    line-height: 1.35;
+    color: #475569;
+  }
+  .earlyWarningShortcut small { color: #6D28D9; }
+
+  .healthScoreCard { padding: 12px 40px 12px 12px; }
+  .healthScoreCard small { font-size: 11px; color: #475569; }
+  .healthScoreCard > div b { font-size: 15px; }
+  .healthScoreCard > strong { font-size: 30px; }
+  .healthScoreCard > strong em { font-size: 11px; color: #64748B; }
+  .healthScoreCard > span { font-size: 11px; }
+
+  .executivePulse small { font-size: 11px; color: #475569; }
+  .executivePulse b { font-size: 14px; }
+  .executivePulse > span,
+  .executivePulse > button {
+    font-size: 11px;
+    padding: 7px 9px;
+  }
+  .domainTrend { font-size: 10.5px !important; padding: 4px 7px; }
+
+  /* Domain drilldown */
+  .drillCompactHeader {
+    grid-template-columns: 40px 1fr auto;
+    padding: 11px;
+    border-color: #CBD5E1;
+  }
+  .drillCompactHeader > button:first-child {
+    width: 38px;
+    height: 38px;
+  }
+  .drillCompactHeader small { font-size: 11px; color: #475569; }
+  .drillCompactHeader h2 { font-size: 18px; }
+
+  .pillTabs { gap: 8px; }
+  .pillTabs button {
+    min-height: 38px;
+    padding: 8px 13px;
+    font-size: 13px;
+    border-color: #CBD5E1;
+    color: #334155;
+  }
+
+  /* KPI lists */
+  .kpiListCompact {
+    border-color: #CBD5E1;
+    padding: 3px 11px;
+  }
+  .kpiLine {
+    grid-template-columns: minmax(0,1fr) minmax(88px,32%) minmax(70px,auto);
+    gap: 8px;
+    padding: 12px 0;
+  }
+  .kpiNameLine b {
+    font-size: 14px;
+    line-height: 1.3;
+  }
+  .kpiLineMain small {
+    font-size: 11px;
+    line-height: 1.35;
+    color: #475569;
+  }
+  .kpiLineRight strong { font-size: 14px; }
+  .kpiLineRight i { font-size: 18px; }
+  .miniProgress { height: 8px; }
+  .emptyState { font-size: 12px; }
+
+  /* Favorites / cards */
+  .favoriteKpiCard {
+    flex-basis: 160px;
+    min-height: 102px;
+    padding: 10px;
+    border-color: #CBD5E1;
+  }
+  .favoriteKpiCard > small { font-size: 11px; color: #475569; }
+  .favoriteKpiCard > b { font-size: 13px; line-height: 1.3; }
+  .favoriteKpiCard > strong { font-size: 16px; }
+  .favoriteKpiCard > span { font-size: 10px; }
+
+  .horizontalCarousel { grid-auto-columns: minmax(240px, 86%); }
+  .carouselCard { padding: 12px; border-color: #CBD5E1; }
+  .carouselCard > span { font-size: 11px; }
+  .carouselCard > small { font-size: 11px; color: #475569; }
+  .carouselCard > b { font-size: 13px; line-height: 1.45; }
+  .carouselCard > strong { font-size: 14px; }
+
+  /* KPI detail */
+  .kpiFirstFold { padding: 15px; border-color: #CBD5E1; }
+  .kpiFirstFold > small { font-size: 11px; color: #475569; }
+  .kpiFirstFold > strong { font-size: 31px; }
+  .kpiFirstMeta span { font-size: 11px; padding: 6px 8px; color: #334155; }
+
+  .detailCard { padding: 13px; border-color: #CBD5E1; }
+  .detailCardTitle { font-size: 14px; }
+  .detailCard > p { font-size: 12px; line-height: 1.5; color: #475569; }
+  .detailNoRatio { font-size: 13px; color: #334155; }
+  .detailProgress > b { font-size: 14px; }
+  .statPair small { font-size: 11px; color: #475569; }
+  .statPair b { font-size: 14px; }
+  .lockedPanel > b { font-size: 14px; }
+  .lockedPanel p { font-size: 12px; line-height: 1.45; color: #475569; }
+
+  /* Chart readability */
+  .chartAxisLabel { font-size: 10px; fill: #475569; }
+  .chartUnitLabel { font-size: 11px; color: #334155; }
+  .chartLegend,
+  .chartLegend small { font-size: 11px; color: #475569; }
+  .chartMiniInsight span { font-size: 11px; padding: 6px 8px; }
+  .chartMobileDetail {
+    padding: 11px 12px;
+    border-color: #CBD5E1;
+    background: #FFFFFF;
+  }
+  .chartMobileDetailHead b { font-size: 15px; }
+  .chartMobileDetailHead span { font-size: 11px; color: #475569; }
+  .chartMobileDetailGrid small { font-size: 11px; color: #475569; }
+  .chartMobileDetailGrid b { font-size: 14px; }
+
+  /* Difficulties / conclusions */
+  .difficultyHeading b { font-size: 15px; }
+  .difficultyHeading small { font-size: 11px; line-height: 1.45; color: #475569; }
+  .difficultyCompact li { font-size: 13px; line-height: 1.55; color: #1E293B; }
+  .compareConclusion b { font-size: 13px; }
+  .compareConclusion span { font-size: 12px; line-height: 1.5; }
+
+  /* Bottom navigation: larger labels and touch targets */
+  .bottomNavV15 {
+    min-height: 68px;
+    background: rgba(255,255,255,.98);
+    border-color: #CBD5E1;
+    box-shadow: 0 -6px 22px rgba(15,23,42,.10);
+  }
+  .bottomNavV15 button {
+    min-height: 58px;
+    color: #475569;
+  }
+  .bottomNavV15 button > span { font-size: 21px; }
+  .bottomNavV15 button > small {
+    font-size: 12px;
+    font-weight: 750;
+    color: inherit;
+  }
+  .bottomNavV15 button.active { color: #005A36; }
+
+  /* Forms and sheets */
+  input,
+  select,
+  textarea,
+  button { font-size: max(13px, 1em); }
+
+  .sheetOverlay,
+  .sheetPanel,
+  .modalPanel { color: #0B1220; }
+}
+
+@media (max-width: 390px) {
+  .compactHeader h1 { font-size: 17px; }
+  .headerBrand { font-size: 11px; }
+  .periodDropdown select { max-width: 116px; font-size: 11px; }
+  .domainTile { min-height: 152px; }
+  .domainTileText h2 { font-size: 15px; }
+  .domainTileText p { font-size: 11.5px; }
+  .kpiLine {
+    grid-template-columns: minmax(0,1fr) minmax(78px,30%) minmax(66px,auto);
+    gap: 6px;
+  }
+  .kpiNameLine b,
+  .kpiLineRight strong { font-size: 13px; }
+  .bottomNavV15 button > small { font-size: 11px; }
+}
