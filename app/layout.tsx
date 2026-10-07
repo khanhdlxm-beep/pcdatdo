@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
 import './mobile-readable.css';
+import './pdf-revoke.css';
 
 const inter = Inter({
   subsets: ['latin', 'vietnamese'],
