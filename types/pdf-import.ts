@@ -96,6 +96,10 @@ export type PdfImportListItem = {
   createdAt: string;
   approvedAt?: string;
   approvedBy?: string;
+  revokedAt?: string;
+  revokedBy?: string;
+  revokeReason?: string;
+  note?: string;
 };
 
 
