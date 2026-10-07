@@ -182,7 +182,7 @@ function savePdfStaging_(payload){
   const user=String(payload.user||'app-review');
   if(!importId)throw new Error('Thiếu importId');
   const currentLog=pdfFindObject_(PDFMOD.SHEETS.IMPORTS,'IMPORT_ID',importId)||{};
-  if(String(currentLog.STATUS)==='APPROVED'||String(currentLog.STATUS)==='SUPERSEDED')throw new Error('Phiên này đã chốt; không thể sửa staging.');
+  if(['APPROVED','SUPERSEDED','REVOKED'].indexOf(String(currentLog.STATUS))>=0)throw new Error('Phiên này đã chốt/thu hồi; không thể sửa staging.');
   if(!incoming.length&&!payload.summary)return getPdfStaging_(importId);
   const lock=LockService.getScriptLock();lock.waitLock(25000);
   try{
@@ -221,6 +221,7 @@ function approvePdfImport_(payload){
     const currentLog=pdfFindObject_(PDFMOD.SHEETS.IMPORTS,'IMPORT_ID',importId)||{};
     if(String(currentLog.STATUS)==='APPROVED')return {ok:true,alreadyApproved:true,importId:importId,period:pdfNormalizePeriod_(currentLog.PERIOD)||'',upserted:Number(currentLog.AUTO_OK||0),skipped:Number(currentLog.UNMAPPED||0),locked:0};
     if(String(currentLog.STATUS)==='SUPERSEDED')throw new Error('Phiên import này đã được thay thế bởi bản mới hơn.');
+    if(String(currentLog.STATUS)==='REVOKED')throw new Error('Phiên import này đã bị thu hồi. Hãy tạo phiên mới từ PDF đúng.');
 
     let records=Array.isArray(payload.records)?payload.records:[];
     let summary=payload.summary||{};
