@@ -20,7 +20,7 @@ function doGet(e) {
     if (action === 'health') return json_({ ok:true, app:'dieu-hanh-sxkd', mode:'production-pdf', now:new Date().toISOString() });
     if (action === 'bootstrap') return json_(getBootstrap_((e && e.parameter && e.parameter.period) || 'latest'));
     if (action === 'pdfRules') return json_({ ok:true, rules:getPdfRules_() });
-    if (action === 'pdfImports') return json_({ ok:true, imports:listPdfImports_((e && e.parameter && e.parameter.limit) || 20) });
+    if (action === 'pdfImports') return json_({ ok:true, imports:listPdfImports_((e && e.parameter && e.parameter.limit) || 20), capabilities:{ revokeApprovedImport:true } });
     if (action === 'pdfPeriodData') return json_({ ok:true, records:getPdfPeriodData_((e && e.parameter && e.parameter.period) || '') });
     if (action === 'pdfStaging') return json_(getPdfStaging_((e && e.parameter && e.parameter.importId) || ''));
     return json_({ ok:false, error:'Unknown action' });
