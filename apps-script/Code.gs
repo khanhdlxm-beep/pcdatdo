@@ -35,6 +35,7 @@ function doPost(e) {
     if (!isAuthorizedPayload_(payload)) return json_({ ok:false, error:'Unauthorized' });
     if (payload.action === 'stagePdfImport') return json_(stagePdfImport_(payload));
     if (payload.action === 'approvePdfImport') return json_(approvePdfImportProduction_(payload));
+    if (payload.action === 'revokePdfImport') return json_(revokePdfImport_(payload));
     if (payload.action === 'correctImportedKpi') return json_(correctImportedKpi_(payload));
     if (payload.action === 'savePdfStaging') return json_(savePdfStaging_(payload));
     return json_({ ok:false, error:'Unknown action' });
