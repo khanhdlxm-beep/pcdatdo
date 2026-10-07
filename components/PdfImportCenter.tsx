@@ -36,7 +36,7 @@ export default function PdfImportCenter(){
   const period=`${year}-${month}`;
   const [configured,setConfigured]=useState<boolean|null>(null); const [pin,setPin]=useState(''); const [token,setToken]=useState(''); const [authError,setAuthError]=useState('');
   const [files,setFiles]=useState<File[]>([]); const [busy,setBusy]=useState(''); const [progress,setProgress]=useState(''); const [result,setResult]=useState<PdfParseResult|null>(null); const [records,setRecords]=useState<PdfImportRecord[]>([]); const [filter,setFilter]=useState<'all'|'review'|'conflict'|'unmapped'>('all'); const [message,setMessage]=useState(''); const [imports,setImports]=useState<PdfImportListItem[]>([]);
-  const [approvedRows,setApprovedRows]=useState<PdfApprovedHistoryItem[]>([]); const [corrKpiId,setCorrKpiId]=useState(''); const [corrField,setCorrField]=useState<keyof PdfNumericValues>('actualMonth'); const [corrValue,setCorrValue]=useState(''); const [corrReason,setCorrReason]=useState(''); const [corrBusy,setCorrBusy]=useState(false);
+  const [approvedRows,setApprovedRows]=useState<PdfApprovedHistoryItem[]>([]); const [corrKpiId,setCorrKpiId]=useState(''); const [corrField,setCorrField]=useState<keyof PdfNumericValues>('actualMonth'); const [corrValue,setCorrValue]=useState(''); const [corrReason,setCorrReason]=useState(''); const [corrBusy,setCorrBusy]=useState(false); const [revokeBusy,setRevokeBusy]=useState('');
   const [sheetUrl,setSheetUrl]=useState(''); const [syncBusy,setSyncBusy]=useState(false); const [syncText,setSyncText]=useState('Chưa đồng bộ'); const [dirtyRows,setDirtyRows]=useState<string[]>([]); const [summaryDirty,setSummaryDirty]=useState(false); const [autoSync,setAutoSync]=useState(true);
 
   useEffect(()=>{fetch('/api/pdf/auth',{cache:'no-store'}).then((r)=>r.json()).then((x)=>setConfigured(Boolean(x.configured))).catch(()=>setConfigured(false));const saved=sessionStorage.getItem('PDF_ADMIN_TOKEN');if(saved)setToken(saved);},[]);
@@ -118,6 +118,32 @@ export default function PdfImportCenter(){
     catch(e){setSyncText('Lỗi đồng bộ');setMessage(`Không lấy được staging: ${e instanceof Error?e.message:e}`);}finally{setSyncBusy(false);}
   }
 
+  async function revokeImport(item:PdfImportListItem){
+    if(item.status!=='APPROVED'||revokeBusy)return;
+    const reason=window.prompt(
+      `Lý do thu hồi phiên ${item.period}:\n\nVí dụ: Duyệt nhầm PDF / chọn sai kỳ / file nguồn không đúng.`,
+      'Duyệt nhầm PDF'
+    );
+    if(reason===null)return;
+    if(!reason.trim()){setMessage('Cần nhập lý do thu hồi để lưu dấu vết kiểm soát.');return;}
+    const ok=window.confirm(
+      `Thu hồi PDF đã duyệt của kỳ ${item.period}?\n\n`+
+      'Chỉ dữ liệu PDF_APPROVED thuộc đúng phiên này bị gỡ. MANUAL_OVERRIDE, kỳ khác và dữ liệu từ import khác được giữ nguyên.\n\n'+
+      'Sau khi thu hồi, hãy chọn đúng kỳ rồi tải PDF mới lên và duyệt lại.'
+    );
+    if(!ok)return;
+    setRevokeBusy(item.importId);setMessage('');
+    try{
+      const x=await api('/api/pdf/revoke',token,{method:'POST',body:JSON.stringify({importId:item.importId,reason:reason.trim(),user:'pdf-admin'})});
+      setMessage(`Đã thu hồi phiên ${item.period}: gỡ ${x.removedHistory||0} KPI PDF_APPROVED, giữ ${x.preservedManual||0} MANUAL_OVERRIDE. Có thể tải PDF đúng lên lại kỳ này.`);
+      if(/^\d{4}-\d{2}$/.test(item.period)){setYear(item.period.slice(0,4));setMonth(item.period.slice(5,7));}
+      await loadImports();
+      await loadPeriodData();
+    }catch(e){
+      setMessage(`Không thu hồi được: ${e instanceof Error?e.message:e}`);
+    }finally{setRevokeBusy('');}
+  }
+
   async function resumeImport(item:PdfImportListItem){
     if(item.status==='APPROVED'){setMessage('Import này đã duyệt. Dùng khu vực “Hiệu chỉnh dữ liệu đã duyệt” nếu cần sửa.');return;}
     setBusy('Đang mở phiên review');
@@ -170,6 +196,6 @@ export default function PdfImportCenter(){
 
     <details className="pdfCorrection"><summary><span><b>Hiệu chỉnh dữ liệu đã duyệt</b><small>Kỳ {period} · mọi sửa đổi được lưu Change Log và khóa MANUAL_OVERRIDE</small></span><span>›</span></summary><div className="pdfCorrectionBody">{approvedRows.length?<><label>KPI<select value={corrKpiId} onChange={(e)=>chooseCorrection(e.target.value)}>{approvedRows.map((r)=><option key={r.kpiId} value={r.kpiId}>{r.label} · {r.kpiId}</option>)}</select></label><label>Trường dữ liệu<select value={corrField} onChange={(e)=>chooseCorrectionField(e.target.value as keyof PdfNumericValues)}>{FIELDS.map((f)=><option key={f} value={f}>{FIELD_LABELS[f]}</option>)}</select></label><label>Giá trị hiện tại<input disabled value={correctionCurrent()===undefined?'—':vi(correctionCurrent())}/></label><label>Giá trị đúng<input inputMode="decimal" value={corrValue} onChange={(e)=>setCorrValue(e.target.value)} placeholder="Nhập giá trị đúng"/></label><label className="wide">Lý do<input value={corrReason} onChange={(e)=>setCorrReason(e.target.value)} placeholder="Ví dụ: PDF đọc sai dấu phân cách"/></label><button className="pdfPrimary wide" disabled={corrBusy||!corrKpiId} onClick={submitCorrection}>{corrBusy?'Đang lưu...':'Lưu hiệu chỉnh & khóa giá trị'}</button></>:<p>Chưa có KPI đã duyệt ở kỳ này.</p>}</div></details>
 
-    <section className="pdfHistory"><div><b>Phiên nhập gần đây</b><button onClick={loadImports}>↻</button></div>{imports.length?<div>{imports.map((x)=><article key={x.importId}><span><b>{x.period}</b><small>{x.files}</small></span><div className="pdfHistoryAction"><em className={x.status==='APPROVED'?'ok':''}>{x.status}</em>{x.status!=='APPROVED'&&<button onClick={()=>void resumeImport(x)}>Tiếp tục review</button>}</div></article>)}</div>:<small>Chưa có lịch sử hoặc backend Google Sheets chưa cấu hình.</small>}</section>
+    <section className="pdfHistory"><div><b>Phiên nhập gần đây</b><button onClick={loadImports}>↻</button></div>{imports.length?<div>{imports.map((x)=><article key={x.importId}><span><b>{x.period}</b><small>{x.files}</small>{x.status==='REVOKED'&&x.revokeReason?<small className="pdfRevokeReason">Thu hồi: {x.revokeReason}</small>:null}</span><div className="pdfHistoryAction"><em className={x.status==='APPROVED'?'ok':x.status==='REVOKED'?'revoked':''}>{x.status}</em>{x.status==='APPROVED'?<button className="revoke" disabled={Boolean(revokeBusy)} onClick={()=>void revokeImport(x)}>{revokeBusy===x.importId?'Đang thu hồi...':'Thu hồi'}</button>:x.status!=='REVOKED'&&x.status!=='SUPERSEDED'?<button onClick={()=>void resumeImport(x)}>Tiếp tục review</button>:null}</div></article>)}</div>:<small>Chưa có lịch sử hoặc backend Google Sheets chưa cấu hình.</small>}</section>
   </main>;
 }
