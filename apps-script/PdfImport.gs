@@ -21,7 +21,7 @@ const PDFMOD = {
   HEADERS: {
     CATALOG: ['KPI_ID','DOMAIN_ID','DOMAIN_NAME','LABEL','UNIT','DIRECTION','AGGREGATE','DECIMALS','ALIASES','ACTIVE'],
     STAGING: ['IMPORT_ID','ROW_ID','PERIOD','DOC_TYPE','KPI_ID','DOMAIN_ID','LABEL','UNIT','SOURCE_LABEL','ACTUAL_MONTH','PLAN_MONTH','ACTUAL_YTD','PLAN_YTD','PLAN_YEAR','SAME_PERIOD_MONTH','SAME_PERIOD_YTD','STATUS_TEXT','CONFIDENCE','SOURCE_FILE','SOURCE_PAGE','SOURCE_EXCERPT','REVIEW_STATUS','ISSUES','REMEMBER_ALIAS','RAW_VALUES_JSON','CONFLICTS_JSON','REVIEW_NOTE','REVIEWED_BY','REVIEWED_AT','CREATED_AT','UPDATED_AT'],
-    IMPORTS: ['IMPORT_ID','PERIOD','FILES','FINGERPRINTS','STATUS','TOTAL','AUTO_OK','NEED_REVIEW','CONFLICT','UNMAPPED','SUMMARY_JSON','CREATED_AT','APPROVED_AT','APPROVED_BY','NOTE'],
+    IMPORTS: ['IMPORT_ID','PERIOD','FILES','FINGERPRINTS','STATUS','TOTAL','AUTO_OK','NEED_REVIEW','CONFLICT','UNMAPPED','SUMMARY_JSON','CREATED_AT','APPROVED_AT','APPROVED_BY','REVOKED_AT','REVOKED_BY','REVOKE_REASON','NOTE'],
     RULES: ['RULE_ID','TYPE','SOURCE_PATTERN','KPI_ID','FIELD','VALUE','ACTION','ACTIVE','CREATED_AT','CREATED_BY'],
     HISTORY: ['ROW_KEY','PERIOD','KPI_ID','DOMAIN_ID','LABEL','UNIT','ACTUAL_MONTH','PLAN_MONTH','ACTUAL_YTD','PLAN_YTD','PLAN_YEAR','SAME_PERIOD_MONTH','SAME_PERIOD_YTD','STATUS','TONE','VALUE_STATUS','IMPORT_ID','SOURCE_FILE','SOURCE_PAGE','UPDATED_AT'],
     SUMMARY: ['PERIOD','TOTAL','PASS','PARTIAL','FAIL','IMPORT_ID','UPDATED_AT'],
@@ -111,7 +111,7 @@ function listPdfImports_(limit){
   return readObjects_(PDFMOD.SHEETS.IMPORTS).reverse().slice(0,Math.max(1,Math.min(Number(limit)||20,100))).map(function(r){return {
     importId:String(r.IMPORT_ID||''),period:pdfNormalizePeriod_(r.PERIOD)||String(r.PERIOD||''),files:String(r.FILES||''),status:String(r.STATUS||''),
     total:Number(r.TOTAL||0),autoOk:Number(r.AUTO_OK||0),needReview:Number(r.NEED_REVIEW||0),conflict:Number(r.CONFLICT||0),unmapped:Number(r.UNMAPPED||0),
-    createdAt:pdfIso_(r.CREATED_AT),approvedAt:r.APPROVED_AT?pdfIso_(r.APPROVED_AT):'',approvedBy:String(r.APPROVED_BY||''),note:String(r.NOTE||'')
+    createdAt:pdfIso_(r.CREATED_AT),approvedAt:r.APPROVED_AT?pdfIso_(r.APPROVED_AT):'',approvedBy:String(r.APPROVED_BY||''),revokedAt:r.REVOKED_AT?pdfIso_(r.REVOKED_AT):'',revokedBy:String(r.REVOKED_BY||''),revokeReason:String(r.REVOKE_REASON||''),note:String(r.NOTE||'')
   };});
 }
 
@@ -272,6 +272,90 @@ function approvePdfImport_(payload){
     pdfFinalizeImportLog_(importId,period,records,summary,stamp,String(payload.approvedBy||'pdf-admin'));
     SpreadsheetApp.flush();
     return {ok:true,importId:importId,period:period,upserted:upserted,skipped:skipped,locked:locked};
+  }finally{lock.releaseLock();}
+}
+
+function revokePdfImport_(payload){
+  setupPdfImportModule();
+  const lock=LockService.getScriptLock();lock.waitLock(30000);
+  try{
+    const importId=String(payload.importId||'').trim();
+    const user=String(payload.user||'pdf-admin').trim()||'pdf-admin';
+    const reason=String(payload.reason||'').trim();
+    if(!importId)throw new Error('Thiếu importId');
+    if(!reason)throw new Error('Vui lòng nhập lý do thu hồi.');
+
+    const log=pdfFindObject_(PDFMOD.SHEETS.IMPORTS,'IMPORT_ID',importId);
+    if(!log)throw new Error('Không tìm thấy phiên import '+importId);
+    const status=String(log.STATUS||'');
+    const period=pdfNormalizePeriod_(log.PERIOD)||String(log.PERIOD||'');
+    if(status==='REVOKED'){
+      return {ok:true,alreadyRevoked:true,importId:importId,period:period,removedHistory:0,preservedManual:0,removedSummary:0};
+    }
+    if(status!=='APPROVED')throw new Error('Chỉ có thể thu hồi phiên đã APPROVED. Trạng thái hiện tại: '+status);
+
+    const ss=SpreadsheetApp.getActive();
+    const stamp=new Date();
+    let removedHistory=0,preservedManual=0,removedSummary=0;
+
+    const hist=ss.getSheetByName(PDFMOD.SHEETS.HISTORY);
+    if(hist&&hist.getLastRow()>=2){
+      const headers=pdfHeaders_(hist),idx=pdfIndex_(headers);
+      const matrix=hist.getRange(2,1,hist.getLastRow()-1,headers.length).getValues();
+      const keep=[];
+      matrix.forEach(function(row){
+        const sameImport=String(row[idx.IMPORT_ID]||'')===importId;
+        if(!sameImport){keep.push(row);return;}
+        const manual=String(row[idx.VALUE_STATUS]||'')==='MANUAL_OVERRIDE';
+        if(manual){preservedManual++;keep.push(row);return;}
+        removedHistory++;
+      });
+      hist.getRange(2,1,hist.getLastRow()-1,headers.length).clearContent();
+      if(keep.length){
+        hist.getRange(2,idx.PERIOD+1,keep.length,1).setNumberFormat('@');
+        hist.getRange(2,1,keep.length,headers.length).setValues(keep);
+      }
+    }
+
+    const summary=ss.getSheetByName(PDFMOD.SHEETS.SUMMARY);
+    if(summary&&summary.getLastRow()>=2){
+      const headers=pdfHeaders_(summary),idx=pdfIndex_(headers);
+      const matrix=summary.getRange(2,1,summary.getLastRow()-1,headers.length).getValues();
+      const keep=matrix.filter(function(row){
+        const remove=String(row[idx.IMPORT_ID]||'')===importId;
+        if(remove)removedSummary++;
+        return !remove;
+      });
+      summary.getRange(2,1,summary.getLastRow()-1,headers.length).clearContent();
+      if(keep.length){
+        summary.getRange(2,idx.PERIOD+1,keep.length,1).setNumberFormat('@');
+        summary.getRange(2,1,keep.length,headers.length).setValues(keep);
+      }
+    }
+
+    const imp=ss.getSheetByName(PDFMOD.SHEETS.IMPORTS);
+    const iHeaders=pdfHeaders_(imp),iIdx=pdfIndex_(iHeaders);
+    const iMatrix=imp.getRange(2,1,imp.getLastRow()-1,iHeaders.length).getValues();
+    let found=false;
+    iMatrix.forEach(function(row){
+      if(String(row[iIdx.IMPORT_ID]||'')!==importId)return;
+      found=true;
+      row[iIdx.STATUS]='REVOKED';
+      if(iIdx.REVOKED_AT!==undefined)row[iIdx.REVOKED_AT]=stamp;
+      if(iIdx.REVOKED_BY!==undefined)row[iIdx.REVOKED_BY]=user;
+      if(iIdx.REVOKE_REASON!==undefined)row[iIdx.REVOKE_REASON]=reason;
+      if(iIdx.NOTE!==undefined)row[iIdx.NOTE]=String(row[iIdx.NOTE]||'')+';REVOKED: '+reason;
+    });
+    if(!found)throw new Error('Không cập nhật được import log '+importId);
+    imp.getRange(2,1,iMatrix.length,iHeaders.length).setValues(iMatrix);
+
+    if(typeof APP!=='undefined'&&APP.SHEETS&&APP.SHEETS.CHANGELOG){
+      const logSh=ss.getSheetByName(APP.SHEETS.CHANGELOG);
+      if(logSh)logSh.appendRow([stamp,user,'IMPORT:'+importId,'PDF_REVOKE','APPROVED','REVOKED',reason+' | removedHistory='+removedHistory+' | preservedManual='+preservedManual]);
+    }
+
+    SpreadsheetApp.flush();
+    return {ok:true,importId:importId,period:period,status:'REVOKED',removedHistory:removedHistory,preservedManual:preservedManual,removedSummary:removedSummary};
   }finally{lock.releaseLock();}
 }
 
