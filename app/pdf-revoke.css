@@ -1,0 +1,16 @@
+.pdfHistoryAction .revoke{
+  border-color:#FECACA;
+  background:#FEF2F2;
+  color:#B91C1C;
+}
+.pdfHistoryAction .revoke:disabled{opacity:.5;cursor:not-allowed}
+.pdfHistory article em.revoked{color:#B91C1C;font-weight:800}
+.pdfRevokeReason{color:#B91C1C!important;font-style:italic}
+
+@media(max-width:640px){
+  .pdfHistoryAction{gap:8px}
+  .pdfHistoryAction button{min-height:34px;padding:7px 9px;font-size:11px}
+  .pdfHistory article em{font-size:10px}
+  .pdfHistory article b{font-size:12px}
+  .pdfHistory article small{font-size:10px;line-height:1.35}
+}
