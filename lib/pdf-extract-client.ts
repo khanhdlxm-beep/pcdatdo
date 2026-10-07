@@ -3,6 +3,7 @@
 import type { PdfExtractedDocument, PdfExtractedPage } from '@/types/pdf-import';
 
 type TextItemLike={str?:string;transform?:number[];width?:number};
+type TextChunkLike={items?:TextItemLike[]};
 
 function buildLines(items:TextItemLike[]) {
   const rows:{y:number;items:{x:number;text:string}[]}[]=[];
@@ -21,6 +22,43 @@ async function fingerprint(buffer:ArrayBuffer){
   return Array.from(new Uint8Array(digest)).map((b)=>b.toString(16).padStart(2,'0')).join('');
 }
 
+/**
+ * Safari/iOS compatibility:
+ * pdf.js 5.x getTextContent() internally consumes streamTextContent() with
+ * for-await-of. Some Safari versions expose ReadableStream.getReader() but
+ * not the async iterator interface expected by pdf.js, causing:
+ * "TypeError: undefined is not a function (near '...t of e...')".
+ *
+ * Read the same stream through the reader API first. Keep getTextContent()
+ * as a fallback for environments where streamTextContent/getReader is absent.
+ */
+async function getTextItemsCompat(page:any):Promise<TextItemLike[]>{
+  try{
+    if(typeof page?.streamTextContent==='function'){
+      const stream=page.streamTextContent();
+      if(stream&&typeof stream.getReader==='function'){
+        const reader=stream.getReader();
+        const items:TextItemLike[]=[];
+        try{
+          while(true){
+            const chunk=await reader.read() as {value?:TextChunkLike;done:boolean};
+            if(chunk.done) break;
+            if(Array.isArray(chunk.value?.items)) items.push(...chunk.value.items);
+          }
+        }finally{
+          try{reader.releaseLock?.();}catch{/* no-op */}
+        }
+        return items;
+      }
+    }
+  }catch{
+    // Fall through to the standard pdf.js method.
+  }
+
+  const content=await page.getTextContent();
+  return Array.isArray(content?.items)?content.items as TextItemLike[]:[];
+}
+
 export async function extractPdfFile(file:File,onProgress?:(page:number,total:number)=>void):Promise<PdfExtractedDocument>{
   const buffer=await file.arrayBuffer();
   const hash=await fingerprint(buffer);
@@ -29,8 +67,9 @@ export async function extractPdfFile(file:File,onProgress?:(page:number,total:nu
   const pdf=await pdfjs.getDocument({data:new Uint8Array(buffer)}).promise;
   const pages:PdfExtractedPage[]=[];
   for(let p=1;p<=pdf.numPages;p++){
-    const page=await pdf.getPage(p); const content=await page.getTextContent();
-    const lines=buildLines(content.items as TextItemLike[]);
+    const page=await pdf.getPage(p);
+    const items=await getTextItemsCompat(page);
+    const lines=buildLines(items);
     pages.push({page:p,lines,text:lines.join('\n')});
     onProgress?.(p,pdf.numPages);
   }
