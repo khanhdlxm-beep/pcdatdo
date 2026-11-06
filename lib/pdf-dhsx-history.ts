@@ -2,7 +2,7 @@ import { KPI_BY_ID, normalizeLookup } from '@/lib/kpi-catalog';
 import { parseViNumber } from '@/lib/pdf-parser';
 import type { PdfExtractedDocument, PdfImportRecord, PdfNumericValues, PdfParseResult, PdfPeriodSummary } from '@/types/pdf-import';
 
-export const PDF_PARSER_VERSION = '1.8.3-production';
+export const PDF_PARSER_VERSION = '1.8.4-columns';
 
 type ExtractedRow = { page:number; rowNo:string; text:string; normalized:string };
 type LineRef = { page:number; text:string; normalized:string };

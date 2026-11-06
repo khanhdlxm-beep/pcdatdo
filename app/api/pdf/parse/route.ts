@@ -3,6 +3,7 @@ import { bearerToken, verifyPdfAdminToken } from '@/lib/pdf-admin-auth';
 import { pdfBackendGet } from '@/lib/pdf-backend';
 import { parsePdfDocuments } from '@/lib/pdf-parser';
 import { applyHistoricalDhsxExtractors, detectPdfDataPeriod } from '@/lib/pdf-dhsx-history';
+import { applyColumnExtraction } from '@/lib/pdf-columns';
 import type { PdfExtractedDocument } from '@/types/pdf-import';
 
 export const dynamic='force-dynamic';
@@ -23,7 +24,7 @@ export async function POST(request:NextRequest){
   const rulesResult=await pdfBackendGet('pdfRules').catch(()=>({ok:false,rules:[]}));
   const rules=Array.isArray((rulesResult as {rules?:unknown[]})?.rules)?(rulesResult as {rules:unknown[]}).rules:[];
   const parsed=parsePdfDocuments(period,documents,rules as Array<{sourcePattern:string;kpiId:string}>);
-  const enriched=applyHistoricalDhsxExtractors(parsed,documents);
+  const enriched=applyColumnExtraction(applyHistoricalDhsxExtractors(parsed,documents),documents);
   if(detectedPeriod && detectedPeriod!==requestedPeriod){
     enriched.notes.unshift(`Đã tự đổi kỳ từ ${requestedPeriod} sang ${detectedPeriod} theo dòng “Thực hiện …” trong PDF.`);
   }

@@ -112,6 +112,11 @@ function kpiHealth(data: DashboardBootstrap, domainId: string, kpiId: string, la
   }
 
   const current = pointFor(history, period);
+  if (!current) {
+    return { kpiId, domainId, label, score:75, band:bandFor(75), planScore:0, trendScore:0,
+      samePeriodScore:0, forecastScore:0, stabilityScore:0, trend:'unknown',
+      coverage:0, confidence:'low', eligible:false, componentsUsed:0 };
+  }
   const previous = pointFor(history, previousMonth(period));
   const same = pointFor(history, previousYear(period));
   const planRaw = componentScore(performanceRatio(history, current));
