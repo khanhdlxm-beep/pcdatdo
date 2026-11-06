@@ -49,7 +49,7 @@ function normalizeDashboardPeriods(data: DashboardBootstrap): DashboardBootstrap
     // Older Apps Script versions substitute YTD for an empty monthly cell.
     // Its history includes a point only when the monthly cell actually exists.
     const point = normalizedHistory?.[item.id]?.points.find((p) => p.period === selectedPeriod);
-    return point ? item : { ...item, value:'—' };
+    return point?.actual !== undefined && point.actual !== null ? item : { ...item, value:'—' };
   };
   const fields = (data.fields ?? []).map((field) => {
     const items=field.items.map(cleanItem);

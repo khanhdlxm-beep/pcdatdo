@@ -3,7 +3,7 @@ import { parseViNumber } from '@/lib/vi-number';
 import type { PdfExtractedDocument, PdfExtractedPage, PdfImportRecord, PdfNumericValues, PdfParseResult } from '@/types/pdf-import';
 
 type Item = NonNullable<PdfExtractedPage['items']>[number];
-type CellName = 'planYear' | 'planYtd' | 'actualMonth' | 'actualYtd' | 'samePeriodYtd' | 'samePeriodRate' | 'compareYear' | 'comparePeriod' | 'status';
+type CellName = 'planYear' | 'planYtd' | 'actualMonth' | 'actualYtd' | 'samePeriodYtd' | 'samePeriodRate' | 'compareYear' | 'comparePeriod' | 'status' | 'forecast' | 'observed' | 'other' | 'other2' | 'monthCount' | 'monthTotal' | 'ytdCount' | 'ytdTotal' | 'monthReceived' | 'monthResolved' | 'monthPending' | 'ytdReceived' | 'ytdResolved' | 'ytdPending';
 type Columns = Partial<Record<CellName, number>>;
 type PhysicalRow = { page:number; label:string; cells:Record<string,string>; excerpt:string; id:string; issues:string[] };
 const center = (item:Item) => item.x + item.width / 2;
@@ -107,10 +107,123 @@ function readReliability(page:PdfExtractedPage):PhysicalRow[] {
   return out;
 }
 
+/** Secondary tables have their own headings; never borrow the main-table columns. */
+function readSupplementary(page:PdfExtractedPage,previous?:PdfExtractedPage):PhysicalRow[] {
+  const items=page.items??[], out:PhysicalRow[]=[];
+  const add=(id:string,label:Item,columns:Columns,unitX:number,dy=4)=>{
+    const row=items.filter((item)=>Math.abs(item.y-label.y)<=dy);
+    out.push({page:page.page,id,label:label.text,cells:parseCells(row,columns,unitX),excerpt:join(row),issues:[]});
+  };
+
+  // The load forecast has three different values: forecast, actual and error.
+  for(const section of items.filter((i)=>norm(i.text).includes('du bao dien thuong pham'))){
+    const below=items.filter((i)=>i.y<section.y&&i.y>section.y-55);
+    const forecast=below.find((i)=>norm(i.text)==='du bao');
+    const observed=below.find((i)=>norm(i.text)==='thuc hien');
+    const error=below.find((i)=>norm(i.text)==='sai so');
+    const assessment=below.find((i)=>norm(i.text)==='danh gia');
+    if(!forecast||!observed||!error||!assessment||!(forecast.x<observed.x&&observed.x<error.x&&error.x<assessment.x))continue;
+    const value=items.find((i)=>i.y<error.y-10&&i.y>error.y-70&&Math.abs(center(i)-center(error))<25&&parseViNumber(i.text)!==undefined);
+    if(value)add('KD_DBPT',value,{forecast:center(forecast),observed:center(observed),actualMonth:center(error),status:center(assessment)},0);
+  }
+
+  // CRM percentages are derived only from the two explicitly identified pairs.
+  for(const section of items.filter((i)=>norm(i.text).includes('he thong crm'))){
+    const area=items.filter((i)=>i.y<section.y&&i.y>section.y-210);
+    const received=area.filter((i)=>['tiep nhan','tiep'].includes(norm(i.text))).sort((a,b)=>a.x-b.x);
+    const resolved=area.filter((i)=>norm(i.text)==='da xu').sort((a,b)=>a.x-b.x);
+    const pending=area.filter((i)=>['dang xu','dang'].includes(norm(i.text))).sort((a,b)=>a.x-b.x);
+    const total=area.find((i)=>norm(i.text)==='tong cong');
+    if(received.length!==2||resolved.length!==2||pending.length!==2||!total)continue;
+    const xs=[received[0].x,resolved[0].x,pending[0].x,received[1].x,resolved[1].x,pending[1].x];
+    if(xs.some((x,i)=>i>0&&x<=xs[i-1]))continue;
+    add('CRM',total,{monthReceived:center(received[0]),monthResolved:center(resolved[0]),monthPending:center(pending[0]),ytdReceived:center(received[1]),ytdResolved:center(resolved[1]),ytdPending:center(pending[1])},total.x+30);
+  }
+
+  // Average access time is the third subcolumn of each reporting period.
+  for(const section of items.filter((i)=>norm(i.text).includes('tiep can dien nang'))){
+    const area=items.filter((i)=>i.y<section.y&&i.y>section.y-180);
+    const label=area.find((i)=>norm(i.text)==='qua luoi dien');
+    if(!label||!area.some((i)=>norm(i.text)==='trung ap'&&Math.abs(i.y-label.y)<20))continue;
+    const headers=area.filter((i)=>i.y>label.y+10);
+    const counts=headers.filter((i)=>norm(i.text)==='so').sort((a,b)=>a.x-b.x);
+    const totals=headers.filter((i)=>['tong','tong thoi'].includes(norm(i.text))).sort((a,b)=>a.x-b.x);
+    if(counts.length!==2||totals.length!==2)continue;
+    const means=totals.map((total,index)=>headers.find((i)=>norm(i.text)==='thoi'&&i.x>total.x+15&&i.x<(counts[index+1]?.x??Infinity)));
+    if(!means[0]||!means[1])continue;
+    const xs=[counts[0].x,totals[0].x,means[0].x,counts[1].x,totals[1].x,means[1].x];
+    if(xs.some((x,i)=>i>0&&x<=xs[i-1]))continue;
+    add('TC_DN',label,{monthCount:center(counts[0]),monthTotal:center(totals[0]),actualMonth:center(means[0]),ytdCount:center(counts[1]),ytdTotal:center(totals[1]),actualYtd:center(means[1])},label.x+40,10);
+  }
+
+  // These are snapshots: the source has one quantity, not a year-to-date value.
+  for(const section of items.filter((i)=>norm(i.text).includes('theo doi diem do mat ket noi'))){
+    const area=items.filter((i)=>i.y<section.y&&i.y>section.y-250);
+    const lost=area.find((i)=>['mat ket noi 48 gio','noi 48 gio'].includes(norm(i.text)));
+    const other=area.find((i)=>norm(i.text)==='mat ket noi do');
+    const total=area.find((i)=>norm(i.text)==='tong cong');
+    if(lost&&other&&total&&lost.x<other.x)add('DX_MK',total,{actualMonth:center(lost),other:center(other)},total.x+15);
+  }
+  for(const section of items.filter((i)=>norm(i.text)==='gia tri ton kho')){
+    const area=items.filter((i)=>i.y<section.y&&i.y>section.y-230);
+    const limit=area.find((i)=>norm(i.text)==='dinh muc'),value=area.find((i)=>norm(i.text)==='gia tri'),assessment=area.find((i)=>norm(i.text)==='so kh');
+    const total=area.find((i)=>norm(i.text)==='tong'),unit=total&&area.find((i)=>Math.abs(i.y-total.y)<4&&norm(i.text)==='ty dong');
+    if(limit&&value&&assessment&&total&&unit&&limit.x<value.x&&value.x<assessment.x)add('TONKHO',total,{planYear:center(limit),actualMonth:center(value),status:center(assessment)},center(unit));
+  }
+  for(const label of items.filter((i)=>norm(i.text)==='tong so cbcnv')){
+    const upper=items.filter((i)=>i.y>label.y&&i.y<label.y+90);
+    const unit=items.find((i)=>Math.abs(i.y-label.y)<5&&norm(i.text)==='nguoi');
+    const count=upper.find((i)=>norm(i.text)==='so luong'),note=upper.find((i)=>norm(i.text)==='bien dong trong thang');
+    if(unit&&count&&note&&count.x<note.x)add('CBCNV',label,{actualMonth:center(count),other:center(note)},center(unit));
+  }
+
+  for(const label of items.filter((i)=>norm(i.text)==='su co luoi trung the')){
+    const upper=items.filter((i)=>i.y>label.y+5&&i.y<label.y+120);
+    const unit=items.find((i)=>Math.abs(i.y-label.y)<4&&norm(i.text)==='vu');
+    const chi=upper.filter((i)=>norm(i.text)==='chi'&&i.x>(unit?.x??1e9)).sort((a,b)=>a.x-b.x);
+    const month=upper.find((i)=>norm(i.text)==='trong'&&i.x>(chi[1]?.x??1e9));
+    const ytd=upper.find((i)=>norm(i.text)==='luy'&&i.x>(month?.x??1e9));
+    const comparisons=upper.filter((i)=>norm(i.text)==='so voi'&&i.x>(ytd?.x??1e9)).sort((a,b)=>a.x-b.x);
+    const assessment=upper.find((i)=>norm(i.text)==='danh'&&i.x>(comparisons[1]?.x??1e9));
+    if(unit&&chi.length===2&&month&&ytd&&comparisons.length===2&&assessment)add('KT_SC',label,{planYear:center(chi[0]),planYtd:center(chi[1]),actualMonth:center(month),actualYtd:center(ytd),comparePeriod:center(comparisons[0]),compareYear:center(comparisons[1]),status:center(assessment)},center(unit));
+  }
+
+  // Workforce productivity and training both have plan/month/year-to-date headings.
+  for(const label of items.filter((i)=>norm(i.text).startsWith('so khach hang so')||norm(i.text).startsWith('tong so gio dao tao'))){
+    const id=norm(label.text).startsWith('so khach hang so')?'NSLD_KH':'DT_GIO';
+    if(id==='NSLD_KH'&&!items.some((i)=>norm(i.text)==='cbcnv'&&Math.abs(i.y-label.y)<25))continue;
+    const upper=items.filter((i)=>i.y>label.y+12&&i.y<label.y+140);
+    const unit=items.find((i)=>Math.abs(i.y-label.y)<10&&i.x>label.x+60&&['kh','gio'].includes(norm(i.text)));
+    const chi=upper.filter((i)=>norm(i.text)==='chi'&&i.x>(unit?.x??1e9)).sort((a,b)=>a.y-b.y)[0];
+    const month=upper.filter((i)=>norm(i.text)==='trong'&&i.x>(chi?.x??1e9)).sort((a,b)=>a.y-b.y)[0];
+    const ytd=upper.filter((i)=>['luy','luy ke'].includes(norm(i.text))&&i.x>(month?.x??1e9)).sort((a,b)=>a.y-b.y)[0];
+    const compare=upper.filter((i)=>['% so voi','dat so voi'].includes(norm(i.text))&&i.x>(ytd?.x??1e9)).sort((a,b)=>a.y-b.y)[0];
+    const assessment=upper.filter((i)=>['danh','danh gia'].includes(norm(i.text))&&i.x>(compare?.x??1e9)).sort((a,b)=>a.y-b.y)[0];
+    if(unit&&chi&&month&&ytd&&compare&&assessment)add(id,label,{planYear:center(chi),actualMonth:center(month),actualYtd:center(ytd),compareYear:center(compare),status:center(assessment)},center(unit),15);
+  }
+
+  // SCL tables can continue onto the next page. Require the SCL section title.
+  const sclContext=norm(page.text+' '+(previous?.text??''));
+  if(sclContext.includes('cong tac scl')||sclContext.includes('cong tac sua chua lon')){
+    for(const label of items.filter((i)=>norm(i.text)==='gia tri thuc hien')){
+      const upper=items.filter((i)=>i.y>label.y+10&&i.y<label.y+250);
+      const unit=items.find((i)=>Math.abs(i.y-label.y)<5&&norm(i.text)==='ty dong'&&i.x>label.x);
+      const plan=upper.find((i)=>norm(i.text)==='ke'&&i.x>(unit?.x??1e9));
+      const month=upper.find((i)=>norm(i.text)==='thang'&&i.x>(plan?.x??1e9));
+      const ytd=upper.find((i)=>norm(i.text)==='luy ke'&&i.x>(month?.x??1e9));
+      const compare=upper.find((i)=>norm(i.text)==='ty le'&&i.x>(ytd?.x??1e9));
+      const note=upper.find((i)=>norm(i.text)==='ghi chu'&&i.x>(compare?.x??1e9));
+      if(unit&&plan&&month&&ytd&&compare&&note)add('SCL',label,{planYear:center(plan),actualMonth:center(month),actualYtd:center(ytd),compareYear:center(compare),other:center(note)},center(unit));
+    }
+  }
+  return out;
+}
+
 function status(text:string):string {
   const n=norm(text).replace(/\s+/g,'');
   if(n.includes('dat1phan')||n.includes('datmotphan'))return 'Đạt một phần';
   if(n.includes('khongdat')||n.includes('chuadat')||n.includes('kdat'))return 'Không đạt';
+  if(n.includes('dukien')&&n.includes('dat'))return 'Dự kiến đạt';
   if(n==='dat')return 'Đạt';
   return '';
 }
@@ -133,6 +246,13 @@ function asRecord(period:string,doc:PdfExtractedDocument,row:PhysicalRow):PdfImp
     else if(number===undefined)issues.push(`Không đọc chắc cột ${field}: “${raw}”.`);
     else values[field]=number;
   }
+  if(row.id==='CRM'){
+    for(const [field,received,resolved] of [['actualMonth','monthReceived','monthResolved'],['actualYtd','ytdReceived','ytdResolved']] as const){
+      const total=parseViNumber(row.cells[received]??''),done=parseViNumber(row.cells[resolved]??'');
+      if(total!==undefined&&done!==undefined&&total>0&&done>=0&&done<=total)values[field]=Number((100*done/total).toFixed(2));
+      else issues.push(`Không đủ số tiếp nhận và đã xử lý để tính ${field}.`);
+    }
+  }
   // Evaluate this check after every cell has been assigned.
   if(entry.aggregate==='sum' && values.actualMonth!==undefined && values.actualYtd!==undefined && values.actualMonth>=0 && values.actualYtd>=0 && values.actualMonth>values.actualYtd){
     delete values.actualMonth;
@@ -140,7 +260,7 @@ function asRecord(period:string,doc:PdfExtractedDocument,row:PhysicalRow):PdfImp
   }
   const empty=!Object.values(values).some((x)=>x!==undefined);
   if(empty)issues.push('Các ô số của chỉ tiêu không có dữ liệu hoặc chưa đọc chắc; giữ trống.');
-  const sourceColumns=['planYear','planYtd','actualMonth','actualYtd','compareYear','comparePeriod','status']
+  const sourceColumns=['planYear','planYtd','actualMonth','actualYtd','compareYear','comparePeriod','status','monthReceived','monthResolved','ytdReceived','ytdResolved']
     .filter((key)=>key in row.cells).map((key)=>`${key}=[${row.cells[key]||''}]`).join(' | ');
   return {rowId:`${period}|${row.id}`,period,docType:'DHSX',kpiId:row.id,domainId:entry.domainId,label:entry.label,unit:entry.unit,
     sourceLabel:'PDF theo cột',sourceFile:doc.name,sourcePage:row.page,sourceExcerpt:(sourceColumns+'\n'+row.excerpt).slice(0,900),sourceCells:row.cells,
@@ -150,8 +270,8 @@ function asRecord(period:string,doc:PdfExtractedDocument,row:PhysicalRow):PdfImp
 export function applyColumnExtraction(result:PdfParseResult,docs:PdfExtractedDocument[]):PdfParseResult {
   const columnRecords=new Map<string,PdfImportRecord>();
   for(const doc of docs){
-    for(const page of doc.pages){
-      for(const row of [...readBusiness(page),...readReliability(page)]){
+    for(const [index,page] of doc.pages.entries()){
+      for(const row of [...readBusiness(page),...readReliability(page),...readSupplementary(page,doc.pages[index-1])]){
         const record=asRecord(result.period,doc,row);
         const previous=columnRecords.get(row.id);
         if(previous){

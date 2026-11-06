@@ -287,7 +287,7 @@ function getPresentation(item: KpiCard, data?: DashboardBootstrap): KpiPresentat
   if (history && point && data) {
     const ratio = metricRatio(history, point);
     const same = historyPoint(data, item.id, previousYearPeriod(data.period));
-    const sameChange = same && same.actual !== 0 ? (point.actual / same.actual - 1) * 100 : undefined;
+    const sameChange = point.actual !== undefined && same?.actual !== undefined && same.actual !== 0 ? (point.actual / same.actual - 1) * 100 : undefined;
     const year = data.period.slice(0, 4);
     const relation = history.direction === 'lower' ? 'lte' : history.direction === 'higher' ? 'gte' : 'info';
     const compareText = history.direction === 'info'
@@ -709,8 +709,8 @@ function SamePeriodPanel({ data, kpiId }: { data: DashboardBootstrap; kpiId: str
   const history = historyForKpi(data, kpiId);
   const current = historyPoint(data, kpiId);
   const same = historyPoint(data, kpiId, previousYearPeriod(data.period));
-  if (!history || !current || !same) return <div className="lockedPanel"><span>↔</span><b>Chưa có dữ liệu cùng kỳ</b></div>;
-  const change = same.actual ? (current.actual / same.actual - 1) * 100 : 0;
+  if (!history || current?.actual === undefined || same?.actual === undefined || same.actual === 0) return <div className="lockedPanel"><span>↔</span><b>Chưa có dữ liệu cùng kỳ</b></div>;
+  const change = (current.actual / same.actual - 1) * 100;
   return (
     <>
       <div className="samePeriodPair">

@@ -33,6 +33,32 @@ assert.equal(get('KD_VIPHAM').statusText,'Không đạt');
 const noCoordinates=applyColumnExtraction({period:'2026-10',records:[old],notes:[]},[{...doc,pages:[{page:1,text:'',lines:[]}]}]);
 assert.deepEqual(noCoordinates.records[0].values,{});
 assert.equal(noCoordinates.records[0].reviewStatus,'NEED_REVIEW');
+// Different tables may have unrelated columns and deliberately empty months.
+const forecastItems=[item('* Dự báo Điện thương phẩm:',60,700,140),
+  item('Dự báo',140,680,30),item('Thực hiện',240,680,50),item('Sai số',360,680,30),item('Đánh giá',460,680,45),
+  item('100.000',140,650,35),item('110.000',240,650,35),item('7,25%',360,650,30),item('Không đạt',460,650,48)];
+const staffItems=[item('Chỉ',300,700,15),item('Trong',340,700,23),item('Lũy kế',390,700,30),item('% so với',450,700,35),item('Đánh',510,700,25),
+  item('Số khách hàng/ Số',130,650,85),item('CBCNV',130,637,35),item('KH',260,644,15),item('500',300,644,20),item('480,25',390,644,35),item('96,05%',450,644,35),item('Dự kiến',510,650,32),item('đạt',510,637,16)];
+const sclItems=[item('Kế',290,700,15),item('tháng',340,700,25),item('lũy kế',390,700,30),item('Tỷ lệ',450,700,25),item('Ghi chú',500,700,35),
+  item('Giá trị thực hiện',110,650,80),item('Tỷ đồng',230,650,40),item('20,000',290,650,35),item('15,250',390,650,35),item('76,25',450,650,25)];
+const crmItems=[item('Hệ thống CRM',90,700,85),item('Tiếp nhận',250,680,35),item('Đã xử',310,680,25),item('Đang xử',350,680,32),item('Tiếp',410,680,20),item('Đã xử',455,680,25),item('Đang',510,680,25),
+  item('Tổng cộng',140,640,55),item('100',255,640,20),item('75',315,640,15),item('25',355,640,15),item('1.000',410,640,30),item('900',455,640,20),item('100',510,640,20)];
+const supplement=applyColumnExtraction({period:'2026-10',records:[],notes:[]},[{...doc,pages:[
+  {page:1,text:'',lines:[],items:forecastItems}, {page:2,text:'Công tác SCL',lines:[],items:[]},
+  {page:3,text:'',lines:[],items:sclItems}, {page:4,text:'',lines:[],items:staffItems}, {page:5,text:'',lines:[],items:crmItems},
+]}]);
+const extra=id=>supplement.records.find(x=>x.kpiId===id);
+assert.deepEqual(extra('KD_DBPT').values,{actualMonth:7.25});
+assert.equal(extra('KD_DBPT').statusText,'Không đạt');
+assert.deepEqual(extra('SCL').values,{planYear:20,actualYtd:15.25});
+assert.deepEqual(extra('NSLD_KH').values,{planYear:500,actualYtd:480.25});
+assert.equal(extra('NSLD_KH').statusText,'Dự kiến đạt');
+assert.deepEqual(extra('CRM').values,{actualMonth:75,actualYtd:90});
+const missingCrmCell=applyColumnExtraction({period:'2026-10',records:[],notes:[]},[{...doc,pages:[{page:1,text:'',lines:[],items:crmItems.filter(i=>!(i.text==='75'&&i.y===640))}]}]);
+assert.deepEqual(missingCrmCell.records[0].values,{actualYtd:90});
+assert.equal(missingCrmCell.records[0].reviewStatus,'NEED_REVIEW');
+const missingForecastHeader=applyColumnExtraction({period:'2026-10',records:[],notes:[]},[{...doc,pages:[{page:1,text:'',lines:[],items:forecastItems.filter(i=>i.text!=='Sai số')}]}]);
+assert.equal(missingForecastHeader.records.some(x=>x.kpiId==='KD_DBPT'),false);
 console.log('PDF columns: number formats, blank cells, wrapped rows and unsafe fallback passed.');
 
 // Reprocessing the same PDF must not delete an older KPI that was skipped.
@@ -54,3 +80,16 @@ didApprove=false;priorRows=[{PERIOD:'2026-09',KPI_ID:'SAIDI',IMPORT_ID:'old',VAL
 assert.throws(()=>gas.approvePdfImportProduction_({importId:'new'}),/chưa được xác nhận/);
 assert.equal(didApprove,false);
 console.log('PDF re-import: skipped and different-period records cannot be removed.');
+
+// A row with a blank monthly value must still expose its real year-to-date value.
+const gasPdf={APP:{SHEETS:{}},readObjects_:()=>[]};
+vm.runInNewContext(readFileSync('apps-script/PdfImport.gs','utf8'),gasPdf);
+gasPdf.setupPdfImportModule=()=>{};
+gasPdf.pdfNormalizePeriod_=x=>x;
+gasPdf.pdfPeriodEnd_=()=>'';
+gasPdf.readObjects_=(sheet)=>sheet==='06_KPI_HISTORY'?[{PERIOD:'2026-10',KPI_ID:'SCL',DOMAIN_ID:'test',LABEL:'SCL',UNIT:'Tỷ đồng',ACTUAL_MONTH:'',ACTUAL_YTD:15.25,PLAN_MONTH:'',PLAN_YTD:'',PLAN_YEAR:20,TONE:'neutral'}]:sheet==='01_DM_CHITIEU'?[{KPI_ID:'SCL',DOMAIN_ID:'test',DOMAIN_NAME:'Test',UNIT:'Tỷ đồng',ACTIVE:true}]:[];
+const snapshot=gasPdf.getImportedBootstrap_('2026-10');
+assert.equal(snapshot.history.SCL.points[0].actual,undefined);
+assert.equal(snapshot.history.SCL.points[0].ytd,15.25);
+assert.equal(snapshot.fields[0].items[0].value,'—');
+console.log('Dashboard history: blank month and real year-to-date values are distinct.');

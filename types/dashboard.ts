@@ -7,7 +7,7 @@ export type ConflictItem = { id:string; label:string; sourceA:string; valueA:str
 export type IncidentCause = { label:string; monthValue:number; monthShare:number; ytdValue:number; ytdShare:number };
 export type Reliability = { id:'SAIFI'|'SAIDI'|'MAIFI'; unit:string; targetYear:number; targetPeriod:number; month:number; ytd:number; status:string };
 export type PlanItem = { id:string; owner:string; title:string; status:string; note?:string; objective?:string; actions?:string[]; deadline?:string; priority?:'Cao'|'Trung bình'|'Bình thường'; expectedResult?:string; measure?:string };
-export type MetricHistoryPoint = { period:string; actual:number; planMonth?:number; ytd?:number; planYtd?:number };
+export type MetricHistoryPoint = { period:string; actual?:number; planMonth?:number; ytd?:number; planYtd?:number };
 export type MetricHistory = {
   id:string;
   unit:string;
