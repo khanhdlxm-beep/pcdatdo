@@ -8,6 +8,7 @@ registerHooks({ resolve(specifier, context, next) {
 }});
 const { parseViNumber } = await import('../lib/vi-number.ts');
 const { applyColumnExtraction } = await import('../lib/pdf-columns.ts');
+const { applyHistoricalDhsxExtractors } = await import('../lib/pdf-dhsx-history.ts');
 for (const [raw, expected] of [['3.246',3246],['1.987,654',1987.654],['123, 4',123.4],['2.93',2.93],['0,003',0.003],['',undefined],['-',undefined],['-,000',undefined],['2,272,52',undefined]]) {
   assert.equal(parseViNumber(raw), expected, raw);
 }
@@ -59,6 +60,9 @@ assert.deepEqual(missingCrmCell.records[0].values,{actualYtd:90});
 assert.equal(missingCrmCell.records[0].reviewStatus,'NEED_REVIEW');
 const missingForecastHeader=applyColumnExtraction({period:'2026-10',records:[],notes:[]},[{...doc,pages:[{page:1,text:'',lines:[],items:forecastItems.filter(i=>i.text!=='Sai số')}]}]);
 assert.equal(missingForecastHeader.records.some(x=>x.kpiId==='KD_DBPT'),false);
+const summaryText='Có 12/15 chỉ tiêu thực hiện đạt: 02 chỉ tiêu không đạt và 01 chỉ tiêu đạt một phần.';
+const summaryResult=applyHistoricalDhsxExtractors({period:'2026-10',records:[],notes:[],summary:{total:4,pass:3,fail:1,partial:0,detected:true}},[{...doc,pages:[{page:1,text:summaryText,lines:[summaryText]}]}]);
+assert.deepEqual(summaryResult.summary,{total:15,pass:12,fail:2,partial:1,detected:true});
 console.log('PDF columns: number formats, blank cells, wrapped rows and unsafe fallback passed.');
 
 // Reprocessing the same PDF must not delete an older KPI that was skipped.
