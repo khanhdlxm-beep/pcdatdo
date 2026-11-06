@@ -17,7 +17,7 @@ export const KPI_CATALOG: KpiCatalogEntry[] = [
   { id:'KD_DIENNHAN', domainId:'kinh-doanh', domainName:'Kinh doanh', label:'Điện nhận', unit:'Tr.kWh', direction:'info', aggregate:'sum', decimals:3, aliases:['điện nhận'] },
   { id:'KD_COCADIENMUA', domainId:'kinh-doanh', domainName:'Kinh doanh', label:'Cơ cấu điện mua', unit:'', direction:'info', aggregate:'snapshot', decimals:0, aliases:['cơ cấu điện mua'] },
   { id:'KD_DTP', domainId:'kinh-doanh', domainName:'Kinh doanh', label:'Điện thương phẩm', unit:'Tr.kWh', direction:'higher', aggregate:'sum', decimals:3, aliases:['sản lượng điện thương phẩm','điện thương phẩm'], pl1RowNo:1 },
-  { id:'KD_DT', domainId:'kinh-doanh', domainName:'Kinh doanh', label:'Doanh thu', unit:'Tỷ đồng', direction:'higher', aggregate:'sum', decimals:2, aliases:['tổng doanh thu','doanh thu'] },
+  { id:'KD_DT', domainId:'kinh-doanh', domainName:'Kinh doanh', label:'Doanh thu', unit:'Tỷ đồng', direction:'higher', aggregate:'sum', decimals:3, aliases:['tổng doanh thu','doanh thu'] },
   { id:'KD_GIA', domainId:'kinh-doanh', domainName:'Kinh doanh', label:'Giá bán điện bình quân', unit:'đ/kWh', direction:'higher', aggregate:'avg', decimals:2, aliases:['giá bán điện bình quân','giá bán điện bq'], pl1RowNo:21 },
   { id:'KD_GIAMUA', domainId:'kinh-doanh', domainName:'Kinh doanh', label:'Giá mua điện bình quân', unit:'đ/kWh', direction:'lower', aggregate:'avg', decimals:2, aliases:['giá mua điện bình quân','giá mua điện bq'] },
   { id:'KD_TT', domainId:'kinh-doanh', domainName:'Kinh doanh', label:'Tổn thất điện năng', unit:'%', direction:'lower', aggregate:'avg', decimals:2, aliases:['tổn thất điện năng','tổn thất'], pl1RowNo:3 },
@@ -50,7 +50,7 @@ export const KPI_CATALOG: KpiCatalogEntry[] = [
 
   { id:'CBCNV', domainId:'nhan-su', domainName:'Nhân sự & Văn hóa', label:'CBCNV', unit:'Người', direction:'info', aggregate:'snapshot', decimals:0, aliases:['cbc nv','cbcnv','lao động sử dụng bình quân'], pl1RowNo:44 },
   { id:'DT_GIO', domainId:'nhan-su', domainName:'Nhân sự & Văn hóa', label:'Giờ đào tạo', unit:'Giờ', direction:'higher', aggregate:'sum', decimals:2, aliases:['số giờ đào tạo','giờ đào tạo'], pl1RowNo:49 },
-  { id:'NSLD_KH', domainId:'nhan-su', domainName:'Nhân sự & Văn hóa', label:'KH/CBCNV', unit:'KH', direction:'higher', aggregate:'snapshot', decimals:0, aliases:['năng suất lao động theo khách hàng','khách hàng/lao động','kh/cbcnv'], pl1RowNo:46 },
+  { id:'NSLD_KH', domainId:'nhan-su', domainName:'Nhân sự & Văn hóa', label:'KH/CBCNV', unit:'KH', direction:'higher', aggregate:'snapshot', decimals:2, aliases:['năng suất lao động theo khách hàng','khách hàng/lao động','kh/cbcnv'], pl1RowNo:46 },
   { id:'ATTT', domainId:'nhan-su', domainName:'Nhân sự & Văn hóa', label:'ATTT', unit:'%', direction:'higher', aggregate:'snapshot', decimals:0, aliases:['an toàn thông tin','attt'], pl1RowNo:55 },
 ];
 
