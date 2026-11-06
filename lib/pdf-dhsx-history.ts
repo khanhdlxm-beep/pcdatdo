@@ -141,7 +141,12 @@ function extractFinance(period:string,doc:PdfExtractedDocument){
   return out;
 }
 
-function detectSummary(docs:PdfExtractedDocument[]):PdfPeriodSummary|undefined{const text=normalizeLookup(docs.map((d)=>d.pages.map((p)=>p.text).join(' ')).join(' '));const totalM=text.match(/co (\d+) chi tieu san xuat kinh doanh chinh/),passM=text.match(/thuc hien dat (\d+)(?: (\d+))? chi tieu/),failM=text.match(/(\d+)(?: \d+)? chi tieu (?:chua|khong) dat/),partialM=text.match(/(\d+)(?: \d+)? chi tieu dat (?:1|mot) phan/);const total=totalM?Number(totalM[1]):passM&&passM[2]?Number(passM[2]):0;if(!total)return undefined;return {total,pass:passM?Number(passM[1]):0,fail:failM?Number(failM[1]):0,partial:partialM?Number(partialM[1]):0,detected:true};}
+function detectSummary(docs:PdfExtractedDocument[]):PdfPeriodSummary|undefined{const text=normalizeLookup(docs.map((d)=>d.pages.map((p)=>p.text).join(' ')).join(' '));
+  // Prefer an explicit "đạt / tổng" management statement when all categories
+  // add up; the opening KPI table can contain a different, smaller subtotal.
+  const explicit=text.match(/co (\d+) (\d+) chi tieu (?:thuc hien )?dat (\d+) chi tieu (?:chua|khong) dat (?:va )?(\d+) chi tieu dat (?:1|mot) phan/);
+  if(explicit){const pass=Number(explicit[1]),total=Number(explicit[2]),fail=Number(explicit[3]),partial=Number(explicit[4]);if(total>0&&pass+fail+partial===total)return {total,pass,fail,partial,detected:true};}
+  const totalM=text.match(/co (\d+) chi tieu san xuat kinh doanh chinh/),passM=text.match(/thuc hien dat (\d+)(?: (\d+))? chi tieu/),failM=text.match(/(\d+)(?: \d+)? chi tieu (?:chua|khong) dat/),partialM=text.match(/(\d+)(?: \d+)? chi tieu dat (?:1|mot) phan/);const total=totalM?Number(totalM[1]):passM&&passM[2]?Number(passM[2]):0;if(!total)return undefined;return {total,pass:passM?Number(passM[1]):0,fail:failM?Number(failM[1]):0,partial:partialM?Number(partialM[1]):0,detected:true};}
 
 export function detectPdfDataPeriod(docs:PdfExtractedDocument[]):string|undefined{for(const doc of docs){const text=doc.pages.slice(0,3).map((p)=>p.text).join(' ').replace(/\s+/g,' ');const patterns=[/Thực\s*hiện\s+(?:tháng\s*)?(0?[1-9]|1[0-2])\s*[\/.-]\s*(20\d{2})/i,/Tháng\s*báo\s*cáo\s*\(?\s*(0?[1-9]|1[0-2])\s*[\/.-]\s*(20\d{2})\s*\)?/i];for(const re of patterns){const m=text.match(re);if(m)return `${m[2]}-${String(Number(m[1])).padStart(2,'0')}`;}}return undefined;}
 
