@@ -287,7 +287,7 @@ function getPresentation(item: KpiCard, data?: DashboardBootstrap): KpiPresentat
   if (history && point && data) {
     const ratio = metricRatio(history, point);
     const same = historyPoint(data, item.id, previousYearPeriod(data.period));
-    const sameChange = same && same.actual !== 0 ? (point.actual / same.actual - 1) * 100 : undefined;
+    const sameChange = point.actual !== undefined && same?.actual !== undefined && same.actual !== 0 ? (point.actual / same.actual - 1) * 100 : undefined;
     const year = data.period.slice(0, 4);
     const relation = history.direction === 'lower' ? 'lte' : history.direction === 'higher' ? 'gte' : 'info';
     const compareText = history.direction === 'info'
@@ -317,10 +317,10 @@ function getPresentation(item: KpiCard, data?: DashboardBootstrap): KpiPresentat
   }
   return {
     primaryValue: item.value,
-    primaryScope: item.detail || 'Hiện trạng',
+    primaryScope: data ? periodLabel(data.period) : 'Hiện trạng',
     comparison: item.status,
-    ytd: item.detail,
-    plan: item.plan,
+    ytd: item.plan,
+    plan: item.detail,
     insight: [item.detail ? `${item.label}: ${item.detail}.` : `${item.label}: ${item.value}.`],
     advice: ['Tiếp tục theo dõi KPI theo kỳ báo cáo và đối chiếu kế hoạch khi dữ liệu mới được cập nhật.'],
   };
@@ -709,8 +709,8 @@ function SamePeriodPanel({ data, kpiId }: { data: DashboardBootstrap; kpiId: str
   const history = historyForKpi(data, kpiId);
   const current = historyPoint(data, kpiId);
   const same = historyPoint(data, kpiId, previousYearPeriod(data.period));
-  if (!history || !current || !same) return <div className="lockedPanel"><span>↔</span><b>Chưa có dữ liệu cùng kỳ</b></div>;
-  const change = same.actual ? (current.actual / same.actual - 1) * 100 : 0;
+  if (!history || current?.actual === undefined || same?.actual === undefined || same.actual === 0) return <div className="lockedPanel"><span>↔</span><b>Chưa có dữ liệu cùng kỳ</b></div>;
+  const change = (current.actual / same.actual - 1) * 100;
   return (
     <>
       <div className="samePeriodPair">
@@ -1133,10 +1133,10 @@ function KpiDetail({ data, domainId, kpiId, favoriteKpis, toggleKpiFavorite, bac
       </div>
       <section className={`detailCard chartDetailCard ${focusChart ? 'chartFocusCard' : ''}`}>
         <div className="detailCardHead"><div><div className="detailCardTitle">{mode === 'compare' ? 'Thực hiện tháng & kế hoạch' : mode === 'ytd' ? 'Lũy kế & kế hoạch' : mode === 'same' ? 'So sánh cùng kỳ' : mode === 'range' ? 'So sánh kỳ tùy chọn' : 'Dự báo xu hướng'}</div>{focusChart && <small>{item.label} · {periodLabel(data.period)}</small>}</div><button type="button" className="chartFocusBtn" onClick={() => setFocusChart((value) => !value)} aria-label={focusChart ? 'Đóng chế độ tập trung' : 'Mở chế độ tập trung'}>{focusChart ? '×' : '⛶'}</button></div>
-        {mode === 'compare' && (historyForKpi(data, item.id) ? <AdaptiveCurrentChart data={data} kpiId={item.id}/> : <div className="statPair"><div><small>Hiện tại</small><b>{p.primaryValue ?? item.value}</b></div><span>↔</span><div><small>Kế hoạch / đánh giá</small><b>{p.plan ?? item.plan ?? p.comparison ?? toneLabel(item.tone, item.status)}</b></div></div>)} 
-        {mode === 'ytd' && <><div className="statPair"><div><small>Lũy kế / hiện trạng</small><b>{p.ytd ?? item.detail ?? item.value}</b></div><span>↔</span><div><small>Kế hoạch / ngưỡng</small><b>{p.plan ?? item.plan ?? 'Chưa có'}</b></div></div>{historyForKpi(data, item.id) && <HistoryChart data={data} kpiId={item.id} mode="ytd" />}</>}
+        {mode === 'compare' && (historyForKpi(data, item.id) && historyPoint(data, item.id) ? <AdaptiveCurrentChart data={data} kpiId={item.id}/> : <div className="statPair"><div><small>Hiện tại</small><b>{p.primaryValue ?? item.value}</b></div><span>↔</span><div><small>Kế hoạch / đánh giá</small><b>{p.plan ?? item.detail ?? p.comparison ?? toneLabel(item.tone, item.status)}</b></div></div>)}
+        {mode === 'ytd' && <><div className="statPair"><div><small>Lũy kế / hiện trạng</small><b>{p.ytd ?? item.plan ?? '—'}</b></div><span>↔</span><div><small>Kế hoạch / ngưỡng</small><b>{p.plan ?? item.plan ?? 'Chưa có'}</b></div></div>{historyForKpi(data, item.id) && <HistoryChart data={data} kpiId={item.id} mode="ytd" />}</>}
         {mode === 'same' && <SamePeriodPanel data={data} kpiId={item.id} />}
-        {mode === 'range' && <RangeComparisonPanel data={data} kpiId={item.id} comparison={comparison} edit={openCompare}/>} 
+        {mode === 'range' && <RangeComparisonPanel data={data} kpiId={item.id} comparison={comparison} edit={openCompare}/>}
         {mode === 'forecast' && <ForecastPanel data={data} kpiId={item.id} />}
       </section>
       <button className="kpiPlanTrigger" onClick={openPlanDetail}>

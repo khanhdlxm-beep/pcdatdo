@@ -70,7 +70,12 @@ export async function extractPdfFile(file:File,onProgress?:(page:number,total:nu
     const page=await pdf.getPage(p);
     const items=await getTextItemsCompat(page);
     const lines=buildLines(items);
-    pages.push({page:p,lines,text:lines.join('\n')});
+    const positioned=items.filter((item)=>String(item.str||'').trim()).map((item)=>({
+      text:String(item.str||'').trim(),
+      x:Number(item.transform?.[4]||0), y:Number(item.transform?.[5]||0),
+      width:Number(item.width||0),
+    }));
+    pages.push({page:p,lines,text:lines.join('\n'),items:positioned});
     onProgress?.(p,pdf.numPages);
   }
   return {name:file.name,size:file.size,fingerprint:hash,pages};

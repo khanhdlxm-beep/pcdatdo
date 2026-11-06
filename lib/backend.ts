@@ -44,11 +44,28 @@ function normalizeDashboardPeriods(data: DashboardBootstrap): DashboardBootstrap
       }]))
     : data.history;
 
+  const selectedPeriod = normalizePeriod(data.period) ?? data.period;
+  const cleanItem = (item:DashboardBootstrap['fields'][number]['items'][number]) => {
+    // Older Apps Script versions substitute YTD for an empty monthly cell.
+    // Its history includes a point only when the monthly cell actually exists.
+    const point = normalizedHistory?.[item.id]?.points.find((p) => p.period === selectedPeriod);
+    return point?.actual !== undefined && point.actual !== null ? item : { ...item, value:'—' };
+  };
+  const fields = (data.fields ?? []).map((field) => {
+    const items=field.items.map(cleanItem);
+    if (field.id !== 'kinh-doanh' || items.some((item) => item.id === 'KD_DTP')) return {...field,items};
+    return { ...field, items: [...items, {
+      id:'KD_DTP', label:'Điện thương phẩm', value:'—', tone:'neutral' as const,
+      status:'Chưa có dữ liệu kỳ này',
+    }] };
+  });
   return {
     ...data,
     period: normalizePeriod(data.period) ?? data.period,
     availablePeriods: normalizedPeriods.length ? normalizedPeriods : data.availablePeriods,
     history: normalizedHistory,
+    fields,
+    headline: (data.headline ?? []).map(cleanItem),
     dataMode: 'apps-script',
   };
 }

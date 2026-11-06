@@ -5,6 +5,8 @@ export type PdfExtractedPage = {
   page: number;
   text: string;
   lines: string[];
+  /** Original PDF coordinates allow empty table cells to remain empty. */
+  items?: Array<{ text:string; x:number; y:number; width:number }>;
 };
 
 export type PdfExtractedDocument = {
@@ -43,6 +45,7 @@ export type PdfImportRecord = {
   unit?: string;
   sourceLabel?: string;
   values: PdfNumericValues;
+  sourceCells?: Record<string, string>;
   statusText?: string;
   confidence: number;
   sourceFile: string;

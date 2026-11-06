@@ -51,7 +51,20 @@ function doPost(e) {
 function approvePdfImportProduction_(payload) {
   const importId = String(payload.importId || '');
   const before = pdfFindObject_(PDFMOD.SHEETS.IMPORTS, 'IMPORT_ID', importId) || {};
+  if (String(before.STATUS || '') === 'APPROVED') return approvePdfImport_(payload);
   const supersedes = pdfSupersedesFromNote_(before.NOTE);
+  if (supersedes.length) {
+    const staged = getPdfStaging_(importId);
+    const covered = {};
+    (staged.records || []).forEach(function(r) {
+      if (r.kpiId && ['AUTO_OK','VERIFIED'].indexOf(String(r.reviewStatus)) >= 0) covered[String(r.kpiId)] = true;
+    });
+    const missing = readObjects_(PDFMOD.SHEETS.HISTORY).filter(function(r) {
+      if (supersedes.indexOf(String(r.IMPORT_ID || '')) < 0 || String(r.VALUE_STATUS || '') === 'MANUAL_OVERRIDE') return false;
+      return pdfNormalizePeriod_(r.PERIOD) !== pdfNormalizePeriod_(staged.period) || !covered[String(r.KPI_ID || '')];
+    }).map(function(r) { return String(r.KPI_ID || ''); });
+    if (missing.length) throw new Error('Không duyệt lại vì các KPI đã có chưa được xác nhận trong phiên mới: '+Array.from(new Set(missing)).join(', ')+'. Hãy kiểm tra, xác nhận hoặc xử lý dữ liệu cũ trước.');
+  }
   const result = approvePdfImport_(payload);
   if (result && result.ok && !result.alreadyApproved && supersedes.length) {
     cleanupSupersededPdfData_(supersedes, importId);

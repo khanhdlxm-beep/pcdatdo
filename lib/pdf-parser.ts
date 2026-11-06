@@ -1,5 +1,7 @@
 import { KPI_BY_ID, KPI_CATALOG, normalizeLookup, type KpiCatalogEntry } from '@/lib/kpi-catalog';
 import type { PdfDocType, PdfExtractedDocument, PdfFieldConflict, PdfImportRecord, PdfNumericValues, PdfParseResult, PdfPeriodSummary } from '@/types/pdf-import';
+import { parseViNumber } from '@/lib/vi-number';
+export { parseViNumber } from '@/lib/vi-number';
 
 type AliasRule={ sourcePattern:string; kpiId:string };
 type RowBlock={ page:number; text:string; firstLine:string; normalized:string; rowNo?:number; statusText?:string };
@@ -14,26 +16,6 @@ function normalizeMalformedNumberText(text:string){
   // such as 2.272,52 into 2,272,52. Reconstruct the intended separator
   // before tokenization so the entire number is handled as one value.
   return String(text||'').replace(/(?<!\d)(-?\d{1,3}),(\d{3}),(\d{2,3})(?!\d)/g,'$1.$2,$3');
-}
-
-export function parseViNumber(raw:string):number|undefined{
-  let s=normalizeMalformedNumberText(String(raw||'')).trim().replace(/\s/g,'').replace(/[–—]/g,'-');
-  s=s.replace(/[^0-9,.-]/g,'');
-  if(!s||s==='-'||s==='.'||s===',') return undefined;
-  const neg=s.startsWith('-'); s=s.replace(/-/g,'');
-  if(s.includes(',')&&s.includes('.')){
-    const comma=s.lastIndexOf(','), dot=s.lastIndexOf('.');
-    if(comma>dot) s=s.replace(/\./g,'').replace(',','.');
-    else s=s.replace(/,/g,'');
-  } else if(s.includes(',')){
-    const parts=s.split(',');
-    if(parts.length===2 && parts[1].length<=4) s=`${parts[0].replace(/\./g,'')}.${parts[1]}`;
-    else s=s.replace(/,/g,'');
-  } else if((s.match(/\./g)||[]).length>1){
-    const parts=s.split('.'); const tail=parts[parts.length-1];
-    if(tail.length<=2) s=parts.slice(0,-1).join('')+'.'+tail; else s=parts.join('');
-  }
-  const n=Number(s); return Number.isFinite(n)?(neg?-n:n):undefined;
 }
 
 function detectDocType(doc:PdfExtractedDocument):PdfDocType{
