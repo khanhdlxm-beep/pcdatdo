@@ -96,4 +96,7 @@ const snapshot=gasPdf.getImportedBootstrap_('2026-10');
 assert.equal(snapshot.history.SCL.points[0].actual,undefined);
 assert.equal(snapshot.history.SCL.points[0].ytd,15.25);
 assert.equal(snapshot.fields[0].items[0].value,'—');
+assert.equal(gasPdf.pdfDecimals_({DECIMALS:0}),0);
+assert.equal(gasPdf.pdfDecimals_({DECIMALS:3}),3);
+assert.equal(gasPdf.pdfDecimals_({DECIMALS:''}),2);
 console.log('Dashboard history: blank month and real year-to-date values are distinct.');
